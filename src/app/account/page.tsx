@@ -3,15 +3,19 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { SubscriptionManager } from '@/components/SubscriptionManager';
 import { Suspense } from 'react';
+import Link from 'next/link';
 
 interface AccountPageProps {
-  searchParams: {
+  searchParams: Promise<{
     refresh?: string;
     checkout_success?: string;
-  };
+  }>;
 }
 
 export default async function AccountPage({ searchParams }: AccountPageProps) {
+  // Await the searchParams promise
+  const resolvedSearchParams = await searchParams;
+  
   // Pass cookies() to createClient so it can read cookieStore.getAll()
   const supabase = createClient(cookies());
   
@@ -24,13 +28,13 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
   }
 
   // Force fresh data if coming from checkout or refresh param
-  const shouldRevalidate = searchParams.checkout_success || searchParams.refresh;
-  
+  const shouldRevalidate = resolvedSearchParams.checkout_success || resolvedSearchParams.refresh;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
         {/* Success Message */}
-        {searchParams.checkout_success && (
+        {resolvedSearchParams.checkout_success && (
           <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -107,6 +111,36 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
           {/* Transaction History */}
           <div className="space-y-6">
             {/* <TransactionHistory user={user} /> */}
+            
+            {/* Web App Access Card - Positioned next to subscription manager */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-blue-900 mb-2">Web App Access</h3>
+                  <p className="text-blue-700 mb-4">
+                    Once you have an active subscription, you&apos;ll be able to access our web application with all its features.
+                  </p>
+          <Link
+  href="/web-app"
+  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors duration-200"
+  target="_blank" // Opens in new tab
+  rel="noopener noreferrer"
+>
+  Access Web App
+  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+  </svg>
+</Link>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
