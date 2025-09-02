@@ -4,10 +4,14 @@ let paddleInstance: Paddle | null = null;
 
 export const getPaddle = async (): Promise<Paddle> => {
   if (!paddleInstance) {
-    paddleInstance = await initializePaddle({
+    const result = await initializePaddle({
       environment: process.env.NEXT_PUBLIC_PADDLE_ENV === 'production' ? 'production' : 'sandbox',
       token: process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN!,
     });
+    if (!result) {
+      throw new Error('Failed to initialize Paddle: initialization returned undefined');
+    }
+    paddleInstance = result;
   }
   return paddleInstance;
 };
@@ -17,7 +21,9 @@ export const openCheckout = async (priceId: string, email: string, customerId?: 
   return paddle.Checkout.open({
     items: [{ priceId, quantity: 1 }],
     customer: customerId ? { id: customerId } : { email },
-    successUrl: `${window.location.origin}/account?success=true`,
+    settings: {
+      successUrl: `${window.location.origin}/account?success=true`, // Use settings.successUrl
+    },
   });
 };
 
