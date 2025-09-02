@@ -5,15 +5,16 @@ import { signOut } from '@/actions/auth';
 
 /**
  * A server component that displays an authentication button.
- * It fetches the current user's session and renders different
- * links based on the authentication state.
+ * It reads the user's session from the request headers and
+ * renders different links based on the authentication state.
  */
 export async function AuthButton() {
-  const supabase = createClient(cookies());
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Get the user from the current session without attempting a refresh
+  // This reads the already-refreshed session from the middleware.
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (user) {
     return (
