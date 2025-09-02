@@ -28,6 +28,41 @@ interface CustomerUpdatePayload {
   updated_at: string;
 }
 
+function verifyPaddleSignature(rawBody: string, signature: string, secret: string): boolean {
+  // Parse the signature header - Paddle Billing format: ts=timestamp;h1=hash
+  const parts = signature.split(';');
+  let timestamp = '';
+  let hash = '';
+  
+  for (const part of parts) {
+    const [key, value] = part.split('=');
+    if (key === 'ts') {
+      timestamp = value;
+    } else if (key === 'h1') {
+      hash = value;
+    }
+  }
+  
+  if (!timestamp || !hash) {
+    return false;
+  }
+  
+  // Create the signed payload: timestamp + ':' + raw body
+  const payload = timestamp + ':' + rawBody;
+  
+  // Compute the expected signature
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(payload, 'utf8')
+    .digest('hex');
+  
+  // Compare signatures using timing-safe comparison
+  return crypto.timingSafeEqual(
+    Buffer.from(expectedSignature, 'hex'), 
+    Buffer.from(hash, 'hex')
+  );
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = createClient();
 
@@ -45,18 +80,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
 
-    // Compute expected signature hash using a secure method
-    const [signatureName, providedSignature] = signatureHeader.split('=');
-    if (signatureName !== 'sha256' || !providedSignature) {
-      return NextResponse.json({ error: 'Invalid signature format' }, { status: 400 });
-    }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(body)
-      .digest('hex');
-
-    if (!crypto.timingSafeEqual(Buffer.from(expectedSignature, 'hex'), Buffer.from(providedSignature, 'hex'))) {
+    // Verify the signature using Paddle Billing format
+    if (!verifyPaddleSignature(body, signatureHeader, webhookSecret)) {
+      console.error('Signature verification failed');
+      console.log('Signature header:', signatureHeader);
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
@@ -197,6 +224,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           console.log(`Logged transaction event ${event.event_type}:`, data.id);
         }
 
+        break;
+      }
+
+      // Payment method events - handle the event you're receiving
+      case 'payment_method.saved':
+      case 'payment_method.deleted': {
+        console.log(`Payment method event: ${event.event_type}`, event.data);
+        // You can add specific handling for payment method events here if needed
         break;
       }
 
