@@ -22,7 +22,7 @@ export const openCheckout = async (priceId: string, email: string, customerId?: 
     items: [{ priceId, quantity: 1 }],
     customer: customerId ? { id: customerId } : { email },
     settings: {
-      successUrl: `${window.location.origin}/account?success=true`, // Use settings.successUrl
+      successUrl: `${window.location.origin}/account?checkout_success=true'`, // Use settings.successUrl
     },
   });
 };

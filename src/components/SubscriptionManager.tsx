@@ -1,106 +1,236 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react'; // Add useCallback
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { SubscriptionCard } from './SubscriptionCard';
-import type { Subscription } from '@/lib/types';
 import type { User } from '@supabase/supabase-js';
+import type { Subscription } from '@/lib/types';
 
 interface SubscriptionManagerProps {
   user: User;
+  forceRefresh?: boolean;
 }
 
-export function SubscriptionManager({ user }: SubscriptionManagerProps) {
+export function SubscriptionManager({ user, forceRefresh = false }: SubscriptionManagerProps) {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
-  const fetchSubscriptions = useCallback(async () => {
+  const fetchSubscriptions = async () => {
     try {
-      // Get customer record
-      const { data: customer } = await supabase
+      setLoading(true);
+      setError(null);
+
+      // Find customer by email
+      const { data: customer, error: customerError } = await supabase
         .from('customers')
         .select('customer_id')
-        .eq('email', user.email!)
+        .eq('email', user.email)
         .single();
+
+      if (customerError) {
+        if (customerError.code === 'PGRST116') {
+          // No customer found yet
+          setSubscriptions([]);
+          return;
+        }
+        throw customerError;
+      }
 
       if (!customer) {
         setSubscriptions([]);
         return;
       }
 
-      // Get subscriptions for this customer
-      const { data: subs } = await supabase
+      // Fetch subscriptions for this customer
+      const { data: subscriptionsData, error: subscriptionsError } = await supabase
         .from('subscriptions')
         .select('*')
         .eq('customer_id', customer.customer_id)
         .order('created_at', { ascending: false });
 
-      if (subs) {
-        setSubscriptions(subs);
+      if (subscriptionsError) {
+        throw subscriptionsError;
       }
-    } catch (error) {
-      console.error('Error fetching subscriptions:', error);
+
+      setSubscriptions(subscriptionsData || []);
+    } catch (err) {
+      console.error('Error fetching subscriptions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load subscriptions');
     } finally {
       setLoading(false);
     }
-  }, [user.email, supabase]); // Add dependencies for useCallback
+  };
 
   useEffect(() => {
     fetchSubscriptions();
-  }, [fetchSubscriptions]); // Add fetchSubscriptions to dependency array
+  }, [user.email, forceRefresh]);
+
+  // Auto-refresh every 5 seconds if forceRefresh is true (for new checkouts)
+  useEffect(() => {
+    if (!forceRefresh) return;
+
+    const interval = setInterval(() => {
+      fetchSubscriptions();
+    }, 5000);
+
+    // Stop auto-refreshing after 30 seconds
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [forceRefresh]);
+
+  const handleCancelSubscription = async (subscriptionId: string) => {
+    // TODO: Implement subscription cancellation
+    console.log('Cancel subscription:', subscriptionId);
+  };
+
+  const handleUpdateSubscription = async (subscriptionId: string) => {
+    // TODO: Implement subscription updates
+    console.log('Update subscription:', subscriptionId);
+  };
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg p-6 border border-gray-200">
-        <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded mb-4 w-1/3"></div>
-          <div className="h-32 bg-gray-200 rounded"></div>
+      <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Subscriptions</h2>
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 bg-gray-200 rounded w-full"></div>
+          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Subscriptions</h2>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">Error loading subscriptions</h3>
+              <div className="mt-1 text-sm text-red-700">
+                <p>{error}</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4">
+            <button
+              onClick={fetchSubscriptions}
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg p-6 border border-gray-200">
+    <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-900">Subscriptions</h2>
-        {subscriptions.length === 0 && (
-          <a 
-            href="/pricing" 
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium"
-          >
-            Browse Plans
-          </a>
-        )}
+        <button
+          onClick={fetchSubscriptions}
+          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
+          <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
       </div>
-      
-      {subscriptions.length > 0 ? (
-        <div className="space-y-4">
-          {subscriptions.map((subscription) => (
-            <SubscriptionCard
-              key={subscription.subscription_id}
-              subscription={subscription}
-              onUpdate={fetchSubscriptions}
-            />
-          ))}
+
+      {subscriptions.length === 0 ? (
+        <div className="text-center py-8">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No subscriptions</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            You don&apos;t have any active subscriptions yet.
+          </p>
+          <div className="mt-6">
+            <a
+              href="/pricing"
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              View Plans
+            </a>
+          </div>
         </div>
       ) : (
-        <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
-          <div className="mx-auto w-12 h-12 text-gray-400 mb-4">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No subscriptions yet</h3>
-          <p className="text-gray-500 mb-6">Get started with one of our plans</p>
-          <a 
-            href="/pricing" 
-            className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium inline-block"
-          >
-            View Pricing Plans
-          </a>
+        <div className="space-y-4">
+          {subscriptions.map((subscription) => (
+            <div key={subscription.subscription_id} className="border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      Subscription {subscription.subscription_id.slice(-8)}
+                    </h3>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        subscription.subscription_status === 'active'
+                          ? 'bg-green-100 text-green-800'
+                          : subscription.subscription_status === 'trialing'
+                          ? 'bg-blue-100 text-blue-800'
+                          : subscription.subscription_status === 'canceled'
+                          ? 'bg-red-100 text-red-800'
+                          : subscription.subscription_status === 'past_due'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {subscription.subscription_status}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600 space-y-1">
+                    {subscription.price_id && (
+                      <p>Price ID: {subscription.price_id}</p>
+                    )}
+                    {subscription.product_id && (
+                      <p>Product ID: {subscription.product_id}</p>
+                    )}
+                    <p>Created: {new Date(subscription.created_at).toLocaleDateString()}</p>
+                    <p>Last Updated: {new Date(subscription.updated_at).toLocaleDateString()}</p>
+                    {subscription.scheduled_change && (
+                      <p className="text-amber-600">Scheduled Change: {subscription.scheduled_change}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-shrink-0 flex space-x-2">
+                  <button
+                    onClick={() => handleUpdateSubscription(subscription.subscription_id)}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    Update
+                  </button>
+                  {subscription.subscription_status === 'active' && (
+                    <button
+                      onClick={() => handleCancelSubscription(subscription.subscription_id)}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
