@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
   const { supabase, supabaseResponse } = createClient(request);
 
   // Refresh session to ensure valid tokens
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession(); // Remove session destructuring
 
   if (error) {
     console.error("Middleware session error:", error.message);
