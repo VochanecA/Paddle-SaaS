@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Transaction } from '@/lib/types';
 import type { User } from '@supabase/supabase-js';
+import { PostgrestError } from '@supabase/supabase-js';
 
 interface TransactionHistoryProps {
   user: User;
@@ -16,11 +17,7 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
   
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchTransactions();
-  }, [user.email]);
-
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -32,7 +29,10 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
         .eq('email', user.email!)
         .single();
 
-      if (customerError || !customer) {
+      if (customerError) {
+        throw customerError;
+      }
+      if (!customer) {
         setTransactions([]);
         return;
       }
@@ -43,20 +43,36 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
         .select('*')
         .eq('customer_id', customer.customer_id)
         .order('created_at', { ascending: false })
-        .limit(50); // Limit to last 50 transactions
+        .limit(50);
 
       if (txnError) {
         throw txnError;
       }
 
       setTransactions(txns || []);
-    } catch (err: any) {
+    } catch (err: unknown) { // Use unknown instead of PostgrestError | Error
       console.error('Error fetching transactions:', err);
-      setError(err.message || 'Failed to load transaction history');
+      if (err instanceof PostgrestError) {
+        // Use PostgrestError properties to align with PostgREST error format
+        const errorMessage = err.details
+          ? `${err.message}: ${err.details}`
+          : err.message;
+        setError(errorMessage || 'Failed to load transaction history');
+      } else if (err instanceof Error) {
+        // Handle generic JavaScript errors
+        setError(err.message || 'Failed to load transaction history');
+      } else {
+        // Handle unexpected error types
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [user.email, supabase]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -80,7 +96,7 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currencyCode.toUpperCase(),
-    }).format(amount / 100); // Convert from cents
+    }).format(amount / 100);
   };
 
   const formatDate = (dateString: string) => {
@@ -190,7 +206,6 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
                 </div>
               </div>
               
-              {/* Success indicators for completed payments */}
               {(transaction.status === 'paid' || transaction.status === 'completed') && (
                 <div className="flex items-center mt-3 pt-3 border-t border-gray-100">
                   <div className="flex-shrink-0">
@@ -204,7 +219,6 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
                 </div>
               )}
               
-              {/* Warning for canceled transactions */}
               {transaction.status === 'canceled' && (
                 <div className="flex items-center mt-3 pt-3 border-t border-gray-100">
                   <div className="flex-shrink-0">
@@ -220,7 +234,6 @@ export function TransactionHistory({ user }: TransactionHistoryProps) {
             </div>
           ))}
           
-          {/* Show pagination hint if we're at the limit */}
           {transactions.length >= 50 && (
             <div className="text-center py-4 border-t border-gray-200">
               <p className="text-sm text-gray-500">

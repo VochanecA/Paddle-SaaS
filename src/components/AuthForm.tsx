@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { AuthError } from '@supabase/supabase-js';
 
 interface AuthFormProps {
   mode: 'signin' | 'signup';
@@ -42,8 +43,14 @@ export function AuthForm({ mode }: AuthFormProps) {
         router.push('/account');
         router.refresh();
       }
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) { // Use unknown instead of AuthError
+      if (error instanceof AuthError) {
+        setError(error.message);
+      } else {
+        // Handle unexpected errors (e.g., network issues)
+        console.error('Unexpected error during authentication:', error);
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

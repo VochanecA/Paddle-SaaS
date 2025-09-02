@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; // Add useCallback
 import { createClient } from '@/lib/supabase/client';
 import { SubscriptionCard } from './SubscriptionCard';
 import type { Subscription } from '@/lib/types';
@@ -16,7 +16,7 @@ export function SubscriptionManager({ user }: SubscriptionManagerProps) {
   
   const supabase = createClient();
 
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = useCallback(async () => {
     try {
       // Get customer record
       const { data: customer } = await supabase
@@ -45,11 +45,11 @@ export function SubscriptionManager({ user }: SubscriptionManagerProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user.email, supabase]); // Add dependencies for useCallback
 
   useEffect(() => {
     fetchSubscriptions();
-  }, [user.email]);
+  }, [fetchSubscriptions]); // Add fetchSubscriptions to dependency array
 
   if (loading) {
     return (

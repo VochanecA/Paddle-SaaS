@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
   const { supabase, supabaseResponse } = createClient(request);
 
   // Refresh session to ensure valid tokens
-  const { data: { session }, error } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
 
   if (error) {
     console.error("Middleware session error:", error.message);
@@ -46,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/auth/:path*", "/account/:path*"], // Apply to auth and account routes
+  matcher: ["/auth/:path*", "/account/:path*"],
 };
