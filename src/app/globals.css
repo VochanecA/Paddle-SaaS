@@ -1,34 +1,86 @@
 @import "tailwindcss";
 
+/* Root variables for light theme */
 :root {
   --background: #ffffff;
   --background-alt: #f9fafb;
   --foreground: #171717;
-  --accent: #3b82f6; /* Blue-500 for light theme */
-  --accent-alt: #4f46e5; /* Indigo-600 for light theme */
+  --accent: #3b82f6; /* Blue-500 */
+  --accent-alt: #4f46e5; /* Indigo-600 */
+  --error: #ef4444; /* Red-500 */
+  --success: #22c55e; /* Green-500 */
+  --transition-duration: 0.3s;
 }
 
+/* Dark mode variables */
+.dark {
+  --background: #0a0a0a;
+  --background-alt: #111827;
+  --foreground: #ededed;
+  --accent: #60a5fa; /* Blue-400 */
+  --accent-alt: #818cf8; /* Indigo-400 */
+  --error: #f87171; /* Red-400 */
+  --success: #4ade80; /* Green-400 */
+}
+
+/* Respect system preference if no theme is set */
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --background: #0a0a0a;
     --background-alt: #111827;
     --foreground: #ededed;
-    --accent: #60a5fa; /* Blue-400 for dark theme */
-    --accent-alt: #818cf8; /* Indigo-400 for dark theme */
+    --accent: #60a5fa;
+    --accent-alt: #818cf8;
+    --error: #f87171;
+    --success: #4ade80;
   }
 }
 
-.dark {
-  --background: #0a0a0a;
-  --background-alt: #111827;
-  --foreground: #ededed;
-  --accent: #60a5fa;
-  --accent-alt: #818cf8;
+/* Base styles */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  transition: background-color var(--transition-duration),
+              color var(--transition-duration);
 }
 
+/* Smooth transitions for elements using these variables */
+.bg-background {
+  background-color: var(--background);
+  transition: background-color var(--transition-duration);
+}
 
+.bg-background-alt {
+  background-color: var(--background-alt);
+  transition: background-color var(--transition-duration);
+}
 
-body {
-  background: var(--background);
+.text-foreground {
   color: var(--foreground);
+  transition: color var(--transition-duration);
+}
+
+.text-accent {
+  color: var(--accent);
+  transition: color var(--transition-duration);
+}
+
+.text-accent-alt {
+  color: var(--accent-alt);
+  transition: color var(--transition-duration);
+}
+
+.text-error {
+  color: var(--error);
+}
+
+.text-success {
+  color: var(--success);
+}
+
+/* Optional: focus & ring utilities with smooth transitions */
+:focus {
+  outline: none;
+  ring-color: var(--accent);
+  transition: ring-color var(--transition-duration);
 }
