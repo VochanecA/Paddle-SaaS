@@ -1,77 +1,156 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion } from 'framer-motion';
+import { ArrowRight } from 'lucide-react';
 
 export function Hero() {
+  const { resolvedTheme } = useTheme();
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [currentTextIndex, setCurrentTextIndex] = useState(0);
+
+  const images = [
+    '/bc1.jpg',
+    '/bc2.jpg',
+    '/bc3.jpg',
+    '/bc4.jpg',
+    '/bc5.jpg',
+  ];
+
+  const heroTexts = [
+    {
+      heading: "Build and Launch Your SaaS in Days",
+      subheading: "A modern template with authentication, payments, and everything you need to go from idea to launch in the blink of an eye.",
+    },
+    {
+      heading: "Launch Your SaaS Faster with Paddle",
+      subheading: "The all-in-one boilerplate with built-in authentication, payments, and pre-built components to accelerate your product development.",
+    },
+    {
+      heading: "Stop Building. Start Launching.",
+      subheading: "Don't get bogged down with boilerplate. Our template handles payments, auth, and more so you can focus on what matters: your product.",
+    },
+  ];
+
+  useEffect(() => {
+    const imageInterval = setInterval(() => {
+      setCurrentImageIndex((prevIndex) => (prevIndex + 1) % images.length);
+    }, 6000);
+
+    const textInterval = setInterval(() => {
+      setCurrentTextIndex((prevIndex) => (prevIndex + 1) % heroTexts.length);
+    }, 5000); // 5 seconds for text rotation
+
+    return () => {
+      clearInterval(imageInterval);
+      clearInterval(textInterval);
+    };
+  }, [images.length, heroTexts.length]);
+
+  const isLight = resolvedTheme === 'light';
+  const currentText = heroTexts[currentTextIndex];
+
   return (
-    <section className="relative py-24 px-4 md:px-8 bg-background transition-colors duration-500">
-      <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-16">
-        {/* Text Content */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
-          className="lg:w-1/2 text-center lg:text-left"
-        >
-          <h1 className="text-5xl lg:text-7xl font-extrabold leading-tight mb-6">
-            <span className="text-red-600 dark:text-foreground">Launch Your SaaS</span>
-            <br />
-            <span className="block text-orange-500 dark:text-accent-alt mt-2">
-              Faster Than Ever
+    <section className={`relative py-16 md:py-24 px-4 md:px-8 overflow-hidden transition-colors duration-500 ${isLight ? 'bg-white' : 'bg-gray-900'}`}>
+      <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row items-center md:items-start gap-12">
+        {/* Left Column: Content */}
+        <div className="md:w-1/2 text-center md:text-left">
+          {/* Badge */}
+          <div className="inline-flex items-center rounded-full bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 mb-6 dark:bg-blue-900 dark:text-blue-200">
+            <span className="relative flex h-2 w-2 mr-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
             </span>
+            Now with Next.js 15.5 & App Router
+          </div>
+          
+          {/* Main heading */}
+          <h1 className={`text-4xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight transition-all duration-1000 ease-in-out ${isLight ? 'text-gray-900' : 'text-white'}`}>
+            {currentText.heading.split(' ').map((word, index, arr) => {
+              const gradientWord = word.toLowerCase();
+              const needsGradient = ['faster', 'paddle', 'launching'].includes(gradientWord);
+              
+              if (needsGradient) {
+                return (
+                  <span
+                    key={index}
+                    className={`bg-clip-text text-transparent bg-gradient-to-r transition-all duration-1000 ease-in-out ${
+                      isLight
+                        ? 'from-orange-600 to-amber-500'
+                        : 'from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'
+                    }`}
+                  >
+                    {' ' + arr.slice(index).join(' ')}
+                  </span>
+                );
+              }
+              return (
+                <span key={index}>
+                  {word}
+                  {index === arr.length - 1 ? '' : ' '}
+                </span>
+              );
+            })}
           </h1>
-          <p className="text-lg text-foreground/80 max-w-xl mx-auto lg:mx-0 mb-10">
-            A modern, production-ready starter kit with authentication, billing, and scalable infrastructure — so you can focus on building your product, not boilerplate.
+          
+          {/* Subheading */}
+          <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto md:mx-0 mb-10 leading-relaxed transition-opacity duration-1000 ease-in-out">
+            {currentText.subheading}
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+          
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start items-center mb-16">
             <Link
               href="/auth/signup"
-              className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-red-600 hover:bg-red-700 dark:bg-accent dark:hover:bg-accent-alt rounded-xl transition-transform transform hover:scale-105 shadow-lg"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-xl flex items-center"
             >
-              Get Started
-              <svg
-                className="ml-2 w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M14 5l7 7m0 0l-7 7m7-7H3"
-                />
-              </svg>
+              Get Started Free
+              <ArrowRight className="w-5 h-5 ml-2" />
             </Link>
             <Link
-              href="/pricing"
-              className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold border-2 border-foreground/20 hover:bg-foreground/10 rounded-xl transition-colors"
+              href="/demo"
+              className="border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300 font-medium py-3 px-6 rounded-lg transition-all duration-300"
             >
-              View Pricing
+              View Demo
             </Link>
           </div>
-        </motion.div>
-
-        {/* Hero Image */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="lg:w-1/2 flex justify-center lg:justify-end"
-        >
-          <div className="relative w-full max-w-md h-72 lg:h-96 rounded-3xl overflow-hidden shadow-xl">
+        </div>
+        
+        {/* Right Column: Rotating Image Carousel */}
+        <div className="relative w-full md:w-1/2 aspect-video rounded-3xl overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700">
+          {images.map((src, index) => (
             <Image
-              src="/hero.jpeg"
-              alt="Hero Image"
+              key={src}
+              src={src}
+              alt={`App screenshot ${index + 1}`}
               fill
-              className="object-cover"
-              priority
+              className={`object-cover transition-opacity duration-1000 ease-in-out ${
+                index === currentImageIndex ? 'opacity-100' : 'opacity-0'
+              }`}
+              sizes="(max-width: 768px) 100vw, 50vw"
             />
+          ))}
+        </div>
+      </div>
+      
+      {/* Stats Section */}
+      <div className="max-w-7xl mx-auto relative z-10 mt-16 md:mt-24">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="text-center">
+            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">100%</div>
+            <div className="text-gray-600 dark:text-gray-400 mt-2">Faster Development</div>
           </div>
-        </motion.div>
+          <div className="text-center">
+            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">24/7</div>
+            <div className="text-gray-600 dark:text-gray-400 mt-2">Support Included</div>
+          </div>
+          <div className="text-center">
+            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">30+</div>
+            <div className="text-gray-600 dark:text-gray-400 mt-2">Pre-built Components</div>
+          </div>
+        </div>
       </div>
     </section>
   );
