@@ -3,7 +3,6 @@ import './globals.css';
 import { Inter } from 'next/font/google';
 import { Providers } from '@/components/Providers';
 import { Navigation } from '@/components/Navigation';
-import { AuthButton } from '@/components/AuthButton';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -17,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>
-          <Navigation authSection={<AuthButton />} />
+          <Navigation />
           <main className="min-h-screen">{children}</main>
         </Providers>
       </body>
