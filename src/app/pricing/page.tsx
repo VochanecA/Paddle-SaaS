@@ -1,5 +1,8 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useTheme } from 'next-themes';
 import { PricingCard } from '@/components/PricingCard';
-import { ThemeToggle } from '@/components/ThemeToggle';
 
 const plans = [
   {
@@ -41,16 +44,29 @@ const plans = [
 ];
 
 export default function PricingPage() {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null; 
+  }
+
+  const isLight = resolvedTheme === 'light';
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 py-12 transition-colors duration-300">
+    <div className={`min-h-screen py-12 transition-colors duration-300 ${isLight ? 'bg-white' : 'bg-gradient-to-b from-gray-900 to-gray-800'}`}>
 
       
       <div className="max-w-6xl mx-auto px-4">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4 transition-colors duration-300">
+          <h1 className="text-4xl font-bold mb-4 transition-colors duration-300 bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-500">
             Choose Your Plan
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto transition-colors duration-300">
+          <p className={`text-xl max-w-2xl mx-auto transition-colors duration-300 ${isLight ? 'text-gray-900' : 'text-gray-300'}`}>
             Start with a free trial. No credit card required. 
             Cancel or change your plan anytime.
           </p>
