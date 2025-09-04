@@ -1,4 +1,3 @@
-// src/lib/ai.ts
 import { getEnvVariable } from './env';
 
 export type AIModelProvider = 'openrouter' | 'anthropic' | 'openai' | 'gemini';
@@ -101,9 +100,6 @@ export class AIService {
   }
 }
 
-// Hardcoded API key for testing (REMOVE THIS IN PRODUCTION)
-const HARDCODED_OPENROUTER_API_KEY = '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';
-
 // Helper function to create AI service instance
 export function createAIService(provider: AIModelProvider): AIService | null {
   // Don't run this on server side
@@ -111,23 +107,15 @@ export function createAIService(provider: AIModelProvider): AIService | null {
     return null;
   }
 
-  let apiKey: string | undefined;
+  const envVars: Record<AIModelProvider, string> = {
+    openrouter: 'NEXT_PUBLIC_OPENROUTER_API_KEY',
+    anthropic: 'NEXT_PUBLIC_ANTHROPIC_API_KEY',
+    openai: 'NEXT_PUBLIC_OPENAI_API_KEY',
+    gemini: 'NEXT_PUBLIC_GEMINI_API_KEY',
+  };
 
-  // Use hardcoded key for openrouter, environment variables for others
-  if (provider === 'openrouter') {
-    apiKey = HARDCODED_OPENROUTER_API_KEY;
-    console.log('Using hardcoded OpenRouter API key (for testing only)');
-  } else {
-    const envVars: Record<AIModelProvider, string> = {
-      openrouter: 'NEXT_PUBLIC_OPENROUTER_API_KEY',
-      anthropic: 'NEXT_PUBLIC_ANTHROPIC_API_KEY',
-      openai: 'NEXT_PUBLIC_OPENAI_API_KEY',
-      gemini: 'NEXT_PUBLIC_GEMINI_API_KEY',
-    };
-
-    const envVarName = envVars[provider];
-    apiKey = process.env[envVarName];
-  }
+  const envVarName = envVars[provider];
+  const apiKey = getEnvVariable(envVarName);
 
   if (!apiKey) {
     console.warn(`${provider} API key not configured.`);
@@ -139,10 +127,6 @@ export function createAIService(provider: AIModelProvider): AIService | null {
 
 // Simple function to test if API key is available
 export function isAIServiceAvailable(provider: AIModelProvider = 'openrouter'): boolean {
-  if (provider === 'openrouter') {
-    return !!HARDCODED_OPENROUTER_API_KEY; // Simplified for testing
-  }
-
   const envVars: Record<AIModelProvider, string> = {
     openrouter: 'NEXT_PUBLIC_OPENROUTER_API_KEY',
     anthropic: 'NEXT_PUBLIC_ANTHROPIC_API_KEY',
