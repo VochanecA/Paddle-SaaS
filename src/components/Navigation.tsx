@@ -167,6 +167,7 @@ export function Navigation() {
 
         {/* Mobile menu button */}
         <div className="md:hidden flex items-center gap-4">
+          <ThemeToggle className="p-2" iconClass="w-6 h-6" />
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 rounded-md text-blue-800 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
@@ -243,11 +244,12 @@ export function Navigation() {
           </div>
           
           <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <ThemeToggle showLabel={true} iconSize={5} />
-            
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-              Made with <Heart className="w-4 h-4 text-red-500" /> by Alen
-            </div>
+
+            <ThemeToggle showLabel={true} iconClass="w-5 h-5" />
+
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+            Made with <Heart className="w-4 h-4 text-red-500" /> by Alen
           </div>
         </div>
       )}

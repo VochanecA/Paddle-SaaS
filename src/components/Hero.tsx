@@ -8,8 +8,14 @@ import { ArrowRight } from 'lucide-react';
 
 export function Hero() {
   const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false); // New state to check if the component is mounted on the client
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
+
+  // Set the mounted state to true after the component has mounted on the client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const images = [
     '/bc1.jpg',
@@ -41,13 +47,23 @@ export function Hero() {
 
     const textInterval = setInterval(() => {
       setCurrentTextIndex((prevIndex) => (prevIndex + 1) % heroTexts.length);
-    }, 5000); // 5 seconds for text rotation
+    }, 5000);
 
     return () => {
       clearInterval(imageInterval);
       clearInterval(textInterval);
     };
   }, [images.length, heroTexts.length]);
+
+  // If the component is not yet mounted on the client, return a loading state or null
+  // This prevents the hydration error by not rendering theme-dependent classes on the server
+  if (!mounted) {
+    return (
+      <section className="relative py-16 md:py-24 px-4 md:px-8 overflow-hidden">
+        {/* You can render a basic, theme-agnostic skeleton here if you want to prevent a flash of unstyled content */}
+      </section>
+    );
+  }
 
   const isLight = resolvedTheme === 'light';
   const currentText = heroTexts[currentTextIndex];
@@ -73,19 +89,33 @@ export function Hero() {
               const needsGradient = ['faster', 'paddle', 'launching'].includes(gradientWord);
               
               if (needsGradient) {
-                return (
-                  <span
-                    key={index}
-                    className={`bg-clip-text text-transparent bg-gradient-to-r transition-all duration-1000 ease-in-out ${
-                      isLight
-                        ? 'from-orange-600 to-amber-500'
-                        : 'from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'
-                    }`}
-                  >
-                    {' ' + arr.slice(index).join(' ')}
-                  </span>
-                );
+                // Check if this is the first word that needs a gradient
+                const firstGradientIndex = arr.findIndex(w => ['faster', 'paddle', 'launching'].includes(w.toLowerCase()));
+                if (index === firstGradientIndex) {
+                  return (
+                    <span
+                      key={index}
+                      className={`bg-clip-text text-transparent bg-gradient-to-r transition-all duration-1000 ease-in-out ${
+                        isLight
+                          ? 'from-orange-600 to-amber-500'
+                          : 'from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'
+                      }`}
+                    >
+                      {arr.slice(index).join(' ')}
+                    </span>
+                  );
+                } else {
+                  return null; // Skip subsequent words that are part of the gradient span
+                }
               }
+
+              // If a previous word triggered the gradient, skip rendering this one
+              const previousWords = arr.slice(0, index);
+              const hasPreviousGradientWord = previousWords.some(w => ['faster', 'paddle', 'launching'].includes(w.toLowerCase()));
+              if (hasPreviousGradientWord) {
+                return null;
+              }
+
               return (
                 <span key={index}>
                   {word}

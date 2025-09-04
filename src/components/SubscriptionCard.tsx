@@ -9,11 +9,14 @@ interface SubscriptionCardProps {
 }
 
 export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardProps) {
+  // New state to manage and display error messages
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
   const handleAction = async (action: 'pause' | 'cancel' | 'resume'): Promise<void> => {
     setLoading(action);
+    setErrorMessage(null); // Clear any previous errors on new action attempt
     try {
       const response = await fetch('/api/subscriptions/manage', {
         method: 'POST',
@@ -34,10 +37,10 @@ export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardPro
     } catch (error: unknown) {
       if (error instanceof Error) {
         console.error('Subscription action error:', error.message);
-        alert(`Failed to update subscription: ${error.message}. Please try again.`);
+        setErrorMessage(`Failed to update subscription: ${error.message}. Please try again.`);
       } else {
         console.error('Subscription action error: unknown error', error);
-        alert('Failed to update subscription due to unknown error. Please try again.');
+        setErrorMessage('Failed to update subscription due to unknown error. Please try again.');
       }
     } finally {
       setLoading(null);
@@ -123,6 +126,13 @@ export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardPro
         )}
       </div>
 
+      {/* Error message display */}
+      {errorMessage && (
+        <div className="p-4 mx-6 my-4 rounded-lg text-sm text-red-800 bg-red-100 border border-red-200">
+          {errorMessage}
+        </div>
+      )}
+
       {/* Details Section - Collapsible */}
       {showDetails && (
         <div className="p-6 bg-gray-50 border-b border-gray-100">
@@ -177,22 +187,22 @@ export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardPro
 
       {/* Actions */}
       <div className="p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col space-y-4 md:space-y-0 md:flex-row md:items-center md:justify-between">
           <button
             type="button"
             onClick={() => setShowDetails(!showDetails)}
-            className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+            className="text-sm text-gray-600 hover:text-gray-900 font-medium md:order-first"
           >
             {showDetails ? 'Hide details' : 'Show details'}
           </button>
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex flex-col space-y-2 md:space-y-0 md:flex-row md:space-x-2 md:ml-auto">
             {canResume && (
               <button
                 type="button"
                 onClick={() => handleAction('resume')}
                 disabled={loading === 'resume'}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors min-w-0 flex-1 md:flex-initial"
               >
                 {loading === 'resume' ? 'Resuming...' : 'Resume'}
               </button>
@@ -202,7 +212,7 @@ export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardPro
                 type="button"
                 onClick={() => handleAction('pause')}
                 disabled={loading === 'pause'}
-                className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors min-w-0 flex-1 md:flex-initial"
               >
                 {loading === 'pause' ? 'Pausing...' : 'Pause'}
               </button>
@@ -212,7 +222,7 @@ export function SubscriptionCard({ subscription, onUpdate }: SubscriptionCardPro
                 type="button"
                 onClick={() => handleAction('cancel')}
                 disabled={loading === 'cancel'}
-                className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors min-w-0 flex-1 md:flex-initial"
               >
                 {loading === 'cancel' ? 'Canceling...' : 'Cancel'}
               </button>

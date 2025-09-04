@@ -5,13 +5,15 @@ import { useTheme } from 'next-themes';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+// Renamed iconSize to iconClass for better clarity
 interface ThemeToggleProps {
   showLabel?: boolean;
   className?: string;
-  iconSize?: number;
+  iconClass?: string;
 }
 
-export function ThemeToggle({ showLabel = false, className = '', iconSize = 5 }: ThemeToggleProps) {
+// Updated the function signature to use iconClass
+export function ThemeToggle({ showLabel = false, className = '', iconClass = "w-5 h-5" }: ThemeToggleProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -29,21 +31,23 @@ export function ThemeToggle({ showLabel = false, className = '', iconSize = 5 }:
 
   const getThemeIcon = () => {
     if (!mounted) {
-      return <Monitor className={`w-${iconSize} h-${iconSize}`} />;
+      return <Monitor className={iconClass} />;
     }
     
     if (theme === 'system') {
-      return <Monitor className={`w-${iconSize} h-${iconSize}`} />;
+      return <Monitor className={iconClass} />;
     }
+    
+    // Apply different text colors based on the theme
     return resolvedTheme === 'dark' ? 
-      <Moon className={`w-${iconSize} h-${iconSize}`} /> : 
-      <Sun className={`w-${iconSize} h-${iconSize}`} />;
+      <Moon className={`${iconClass} text-indigo-400`} /> : 
+      <Sun className={`${iconClass} text-orange-500`} />;
   };
 
   if (!mounted) {
     return (
       <button className={`p-2 rounded-full bg-gray-100 dark:bg-gray-800 ${className}`}>
-        <div className={`w-${iconSize} h-${iconSize}`}></div>
+        <div className={iconClass}></div>
       </button>
     );
   }
