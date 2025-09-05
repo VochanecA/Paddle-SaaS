@@ -65,14 +65,6 @@ const DEFAULT_MODELS: Record<AIModelProvider, string> = {
   deepseek: 'deepseek-chat',
 };
 
-// Define headers type for fetch request
-interface RequestHeaders {
-  'Content-Type': string;
-  Authorization?: string;
-  'HTTP-Referer'?: string;
-  'X-Title'?: string;
-}
-
 // Define expected response shapes for different providers
 interface OpenAIResponse {
   choices: Array<{ message: { content: string } }>;
@@ -118,8 +110,8 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           stream: req.stream ?? false,
         };
 
-  // Construct headers
-  const headers: RequestHeaders = {
+  // Construct headers as Record<string, string> to match HeadersInit
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
@@ -141,7 +133,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
   // Make API request
   const response = await fetch(url, {
     method: 'POST',
-    headers,
+    headers, // Now headers is guaranteed to be Record<string, string>
     body: JSON.stringify(body),
   });
 
