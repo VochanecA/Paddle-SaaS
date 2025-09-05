@@ -76,22 +76,32 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
     fetchSubscriptions();
   }, [fetchSubscriptions, forceRefresh]);
 
-  useEffect(() => {
-    if (!forceRefresh) return;
+// Existing useEffect that polls when forceRefresh is true
+useEffect(() => {
+  if (!forceRefresh) return;
 
-    const interval = setInterval(() => {
-      fetchSubscriptions();
-    }, 5000);
+  const interval = setInterval(() => {
+    fetchSubscriptions();
+  }, 5000);
 
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-    }, 30000);
+  const timeout = setTimeout(() => {
+    clearInterval(interval);
+  }, 30000);
 
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [forceRefresh, fetchSubscriptions]);
+  return () => {
+    clearInterval(interval);
+    clearTimeout(timeout);
+  };
+}, [forceRefresh, fetchSubscriptions]);
+
+// ✅ Add this new polling effect for automatic refresh
+useEffect(() => {
+  const interval = setInterval(() => {
+    fetchSubscriptions();
+  }, 10000); // every 10s
+
+  return () => clearInterval(interval);
+}, [fetchSubscriptions]);
 
   const handleCancelSubscription = async (subscriptionId: string, immediate = false) => {
     console.log('Canceling subscription:', { subscriptionId, immediate });
