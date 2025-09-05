@@ -40,7 +40,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
 10. Always reason thoroughly before responding to ensure high-quality answers.
 11. Ensure all suggestions are feasible and have been tested or implemented within the European Union, or are supported by EU-related experience.
 12. Tailor advice to comply with EU regulations, standards, and local conditions to guarantee practical and relevant responses.`,
-      title = 'DeepSeek AI Assistant',
+      title = 'Your AI Assistant',
       description = 'Ask me anything! I can analyze text and images 😊',
       userId,
     },

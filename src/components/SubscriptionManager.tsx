@@ -15,15 +15,15 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelingSubscriptions, setCancelingSubscriptions] = useState<Set<string>>(new Set());
+  const [showCancelModal, setShowCancelModal] = useState<string | null>(null);
   const supabase = createClient();
 
-  // Wrap fetchSubscriptions with useCallback to memoize it and prevent unnecessary re-renders
   const fetchSubscriptions = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Find customer by email
       const { data: customer, error: customerError } = await supabase
         .from('customers')
         .select('customer_id')
@@ -45,7 +45,6 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
         return;
       }
 
-      // Fetch subscriptions for this customer
       const { data: subscriptionsData, error: subscriptionsError } = await supabase
         .from('subscriptions')
         .select('*')
@@ -58,12 +57,12 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
 
       const subs = subscriptionsData || [];
       setSubscriptions(subs);
-      
-      const hasActiveSubscription = subs.some(sub => 
+
+      const hasActiveSubscription = subs.some(sub =>
         sub.subscription_status === 'active' || sub.subscription_status === 'trialing'
       );
       onSubscriptionChange?.(hasActiveSubscription);
-      
+
     } catch (err) {
       console.error('Error fetching subscriptions:', err);
       setError(err instanceof Error ? err.message : 'Failed to load subscriptions');
@@ -94,13 +93,137 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
     };
   }, [forceRefresh, fetchSubscriptions]);
 
-  const handleCancelSubscription = async (subscriptionId: string) => {
-    console.log('Cancel subscription:', subscriptionId);
+  const handleCancelSubscription = async (subscriptionId: string, immediate = false) => {
+    console.log('Canceling subscription:', { subscriptionId, immediate });
+    setCancelingSubscriptions(prev => new Set(prev.add(subscriptionId)));
+
+    try {
+      const response = await fetch('/api/subscriptions/manage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscriptionId,
+          action: 'cancel',
+          immediate,
+        }),
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          `${responseData.error || 'Failed to cancel subscription'} (Request ID: ${responseData.request_id || 'unknown'})`
+        );
+      }
+
+      console.log('Subscription cancellation successful:', responseData);
+      await fetchSubscriptions();
+      setShowCancelModal(null);
+
+    } catch (error) {
+      console.error('Error canceling subscription:', error);
+      setError(error instanceof Error ? error.message : 'Failed to cancel subscription');
+    } finally {
+      setCancelingSubscriptions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(subscriptionId);
+        return newSet;
+      });
+    }
   };
 
   const handleUpdateSubscription = async (subscriptionId: string) => {
-    console.log('Update subscription:', subscriptionId);
+    try {
+      const response = await fetch('/api/subscriptions/manage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscriptionId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to get management URL');
+      }
+
+      const result = await response.json();
+
+      if (result.managementUrl) {
+        window.open(result.managementUrl, '_blank');
+      }
+
+    } catch (error) {
+      console.error('Error getting management URL:', error);
+      setError(error instanceof Error ? error.message : 'Failed to get management URL');
+    }
   };
+
+  const CancelModal = ({ subscriptionId }: { subscriptionId: string }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Cancel Subscription
+        </h3>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
+          When would you like to cancel your subscription?
+        </p>
+
+        <div className="space-y-3 mb-6">
+          <button
+            onClick={() => handleCancelSubscription(subscriptionId, false)}
+            disabled={cancelingSubscriptions.has(subscriptionId)}
+            className="w-full text-left p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <div className="font-medium text-gray-900 dark:text-white mb-1">
+              At the end of current billing period
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              You&apos;ll retain access until your next billing date
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleCancelSubscription(subscriptionId, true)}
+            disabled={cancelingSubscriptions.has(subscriptionId)}
+            className="w-full text-left p-4 border border-red-200 dark:border-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <div className="font-medium text-red-900 dark:text-red-300 mb-1">
+              Cancel immediately
+            </div>
+            <div className="text-sm text-red-600 dark:text-red-400">
+              Access will be revoked immediately
+            </div>
+          </button>
+        </div>
+
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowCancelModal(null)}
+            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Keep Subscription
+          </button>
+        </div>
+
+        {cancelingSubscriptions.has(subscriptionId) && (
+          <div className="mt-4 text-center">
+            <div className="inline-flex items-center text-sm text-gray-600 dark:text-gray-400">
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Processing cancellation...
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -167,152 +290,162 @@ export function SubscriptionManager({ user, forceRefresh = false, onSubscription
   }
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-            Subscriptions
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
-            Manage your active subscriptions and billing
-          </p>
-        </div>
-        <button
-          onClick={fetchSubscriptions}
-          className="inline-flex items-center justify-center px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-md transition-colors w-full sm:w-auto"
-        >
-          <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </button>
-      </div>
-
-      {subscriptions.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+    <>
+      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+              Subscriptions
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              Manage your active subscriptions and billing
+            </p>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No subscriptions found</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
-            You don&apos;t have any active subscriptions yet. Choose a plan to get started with our premium features.
-          </p>
-          <a
-            href="/pricing"
-            className="inline-flex items-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
+          <button
+            onClick={fetchSubscriptions}
+            className="inline-flex items-center justify-center px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-md transition-colors w-full sm:w-auto"
           >
-            View Plans
-          </a>
+            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {subscriptions.map((subscription, index) => (
-            <div key={subscription.subscription_id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-5 border border-gray-200 dark:border-gray-700">
-              
-              {/* Header Section */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-2 sm:space-y-0">
-                <div className="flex items-center space-x-3">
-                  <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Subscription
+
+        {subscriptions.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+              <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No subscriptions found</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+              You don&apos;t have any active subscriptions yet. Choose a plan to get started with our premium features.
+            </p>
+            <a
+              href="/pricing"
+              className="inline-flex items-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
+            >
+              View Plans
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {subscriptions.map((subscription, index) => (
+              <div key={subscription.subscription_id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-5 border border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-2 sm:space-y-0">
+                  <div className="flex items-center space-x-3">
+                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                      Subscription
+                    </div>
+                    <span className="text-sm text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                      #{subscription.subscription_id.slice(-8)}
+                    </span>
                   </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
-                    #{subscription.subscription_id.slice(-8)}
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider self-start sm:self-center ${
+                      subscription.subscription_status === 'active'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        : subscription.subscription_status === 'trialing'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                        : subscription.subscription_status === 'canceled'
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                        : subscription.subscription_status === 'past_due'
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {subscription.subscription_status}
                   </span>
                 </div>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider self-start sm:self-center ${
-                    subscription.subscription_status === 'active'
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                      : subscription.subscription_status === 'trialing'
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                      : subscription.subscription_status === 'canceled'
-                      ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-                      : subscription.subscription_status === 'past_due'
-                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  {subscription.subscription_status}
-                </span>
-              </div>
 
-              <hr className="border-gray-200 dark:border-gray-700 mb-4" />
+                <hr className="border-gray-200 dark:border-gray-700 mb-4" />
 
-              {/* Details Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-5">
-                {subscription.price_id && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-5">
+                  {subscription.price_id && (
+                    <div>
+                      <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Price ID</div>
+                      <div className="font-mono text-gray-900 dark:text-gray-100 text-sm bg-gray-100 dark:bg-gray-700 px-2.5 py-1.5 rounded truncate">
+                        {subscription.price_id}
+                      </div>
+                    </div>
+                  )}
+                  {subscription.product_id && (
+                    <div>
+                      <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Product ID</div>
+                      <div className="font-mono text-gray-900 dark:text-gray-100 text-sm bg-gray-100 dark:bg-gray-700 px-2.5 py-1.5 rounded truncate">
+                        {subscription.product_id}
+                      </div>
+                    </div>
+                  )}
                   <div>
-                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Price ID</div>
-                    <div className="font-mono text-gray-900 dark:text-gray-100 text-sm bg-gray-100 dark:bg-gray-700 px-2.5 py-1.5 rounded truncate">
-                      {subscription.price_id}
+                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Created</div>
+                    <div className="text-gray-900 dark:text-gray-100">
+                      {new Date(subscription.created_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Updated</div>
+                    <div className="text-gray-900 dark:text-gray-100">
+                      {new Date(subscription.updated_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {subscription.scheduled_change && (
+                  <div className="mb-5">
+                    <div className="flex items-start p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-700">
+                      <div className="min-w-0">
+                        <div className="text-amber-800 dark:text-amber-300 font-medium text-sm mb-1">Scheduled Change</div>
+                        <p className="text-amber-700 dark:text-amber-200 text-sm">{subscription.scheduled_change}</p>
+                      </div>
                     </div>
                   </div>
                 )}
-                {subscription.product_id && (
-                  <div>
-                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Product ID</div>
-                    <div className="font-mono text-gray-900 dark:text-gray-100 text-sm bg-gray-100 dark:bg-gray-700 px-2.5 py-1.5 rounded truncate">
-                      {subscription.product_id}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Created</div>
-                  <div className="text-gray-900 dark:text-gray-100">
-                    {new Date(subscription.created_at).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Updated</div>
-                  <div className="text-gray-900 dark:text-gray-100">
-                    {new Date(subscription.updated_at).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </div>
-                </div>
-              </div>
 
-              {/* Scheduled Change */}
-              {subscription.scheduled_change && (
-                <div className="mb-5">
-                  <div className="flex items-start p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-700">
-                    <div className="min-w-0">
-                      <div className="text-amber-800 dark:text-amber-300 font-medium text-sm mb-1">Scheduled Change</div>
-                      <p className="text-amber-700 dark:text-amber-200 text-sm">{subscription.scheduled_change}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Actions Section */}
-              <div className="flex flex-col sm:flex-row sm:space-x-3 space-y-2 sm:space-y-0">
-                <button
-                  onClick={() => handleUpdateSubscription(subscription.subscription_id)}
-                  className="inline-flex items-center justify-center px-4 py-2 bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white font-medium rounded-md transition-colors w-full sm:w-auto"
-                >
-                  Update
-                </button>
-                {subscription.subscription_status === 'active' && (
+                <div className="flex flex-col sm:flex-row sm:space-x-3 space-y-2 sm:space-y-0">
                   <button
-                    onClick={() => handleCancelSubscription(subscription.subscription_id)}
-                    className="inline-flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors w-full sm:w-auto"
+                    onClick={() => handleUpdateSubscription(subscription.subscription_id)}
+                    className="inline-flex items-center justify-center px-4 py-2 bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white font-medium rounded-md transition-colors w-full sm:w-auto"
                   >
-                    Cancel
+                    Update
                   </button>
-                )}
+                  {(subscription.subscription_status === 'active' || subscription.subscription_status === 'trialing') && (
+                    <button
+                      onClick={() => setShowCancelModal(subscription.subscription_id)}
+                      disabled={cancelingSubscriptions.has(subscription.subscription_id)}
+                      className="inline-flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors w-full sm:w-auto"
+                    >
+                      {cancelingSubscriptions.has(subscription.subscription_id) ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Canceling...
+                        </>
+                      ) : (
+                        'Cancel'
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showCancelModal && <CancelModal subscriptionId={showCancelModal} />}
+    </>
   );
 }
