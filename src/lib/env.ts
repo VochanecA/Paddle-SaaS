@@ -1,7 +1,8 @@
-// src/lib/env.ts
-export function getEnvVariable(name: string): string | undefined {
-  // Next.js automatically injects NEXT_PUBLIC_ variables on client
-  const value = process.env[name];
-  console.log(`getEnvVariable: ${name} =`, value);
+// lib/env.ts
+export function getEnvVariable(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing environment variable: ${key}`);
+  }
   return value;
 }
