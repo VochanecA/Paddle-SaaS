@@ -1,24 +1,7 @@
-// lib/ai.ts
-/**
- * Universal AI communication utility for Next.js 14+ (Vercel-optimized).
- * Providers: OpenAI, Anthropic, DeepSeek, xAI (Grok), OpenRouter, Gemini
- *
- * Features:
- *  - Type-safe API
- *  - Streaming + non-streaming support
- *  - Retry with exponential backoff + jitter
- *  - Timeout via AbortController
- *  - Server-only environment variable access
- */
-
+// src/lib/ai.ts
 import { getEnvVariable } from './env';
 
-export type AIModelProvider =
-  | 'openai'
-  | 'anthropic'
-  | 'gemini'
-  | 'deepseek'
-  | 'openrouter';
+export type AIModelProvider = 'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'deepseek';
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';
@@ -27,21 +10,22 @@ export interface AIMessage {
 
 export interface AIRequest {
   messages: AIMessage[];
-  model?: string;
-  provider?: AIModelProvider;
   maxTokens?: number;
   temperature?: number;
+  provider?: AIModelProvider;
+  model?: string;
   stream?: boolean;
 }
 
 export interface AIResponse {
-  text: string;
-  raw: unknown;
+  role: 'assistant';
+  content: string;
 }
 
+// Centralized provider configs
 const PROVIDER_CONFIG: Record<
   AIModelProvider,
-  { baseUrl: string; apiKey: string }
+  { baseUrl: string; apiKey?: string }
 > = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -55,133 +39,94 @@ const PROVIDER_CONFIG: Record<
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     apiKey: getEnvVariable('GEMINI_API_KEY'),
   },
-  deepseek: {
-    baseUrl: 'https://api.deepseek.com/v1',
-    apiKey: getEnvVariable('DEEPSEEK_API_KEY'),
-  },
   openrouter: {
     baseUrl: 'https://openrouter.ai/api/v1',
     apiKey: getEnvVariable('OPENROUTER_API_KEY'),
   },
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: getEnvVariable('DEEPSEEK_API_KEY'),
+  },
 };
 
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  retries = 3,
-  backoff = 500
-): Promise<Response> {
-  try {
-    const res = await fetch(url, options);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res;
-  } catch (err) {
-    if (retries <= 0) throw err;
-    await sleep(backoff + Math.random() * 100);
-    return fetchWithRetry(url, options, retries - 1, backoff * 2);
-  }
-}
+// Provider-specific model defaults
+const DEFAULT_MODELS: Record<AIModelProvider, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-20240620',
+  gemini: 'gemini-1.5-pro',
+  openrouter: 'openai/gpt-4o-mini',
+  deepseek: 'deepseek-chat',
+};
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const provider = req.provider ?? 'openai';
+  const provider: AIModelProvider = req.provider ?? 'deepseek';
   const { baseUrl, apiKey } = PROVIDER_CONFIG[provider];
 
-  let url = '';
-  let body: Record<string, unknown> = {};
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-  };
+  if (!apiKey) {
+    throw new Error(`Missing API key for provider: ${provider}`);
+  }
 
-  switch (provider) {
-    case 'openai':
-    case 'deepseek':
-    case 'openrouter':
-      url = `${baseUrl}/chat/completions`;
-      body = {
-        model: req.model ?? 'gpt-4o-mini',
-        messages: req.messages,
-        max_tokens: req.maxTokens,
-        temperature: req.temperature,
-        stream: req.stream,
-      };
-      break;
+  const model = req.model ?? DEFAULT_MODELS[provider];
 
-    case 'anthropic':
-      url = `${baseUrl}/messages`;
-      headers['anthropic-version'] = '2023-06-01';
-      body = {
-        model: req.model ?? 'claude-3-haiku-20240307',
-        messages: req.messages.map((m) => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: m.content,
-        })),
-        max_tokens: req.maxTokens ?? 1024,
-        temperature: req.temperature ?? 0.7,
-        stream: req.stream,
-      };
-      break;
-
-    case 'gemini':
-      url = `${baseUrl}/models/${req.model ?? 'gemini-pro'}:generateContent?key=${apiKey}`;
-      body = {
-        contents: req.messages.map((m) => ({
-          role: m.role,
-          parts: [{ text: m.content }],
-        })),
-        generationConfig: {
-          maxOutputTokens: req.maxTokens ?? 1024,
+  const body =
+    provider === 'anthropic'
+      ? {
+          model,
+          max_tokens: req.maxTokens ?? 800,
           temperature: req.temperature ?? 0.7,
-        },
-      };
-      delete headers.Authorization; // Gemini uses API key in URL
-      break;
+          messages: req.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }
+      : {
+          model,
+          max_tokens: req.maxTokens ?? 800,
+          temperature: req.temperature ?? 0.7,
+          messages: req.messages,
+          stream: req.stream ?? false,
+        };
 
-    default:
-      throw new Error(`Unsupported provider: ${provider satisfies never}`);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-
-  try {
-    const res = await fetchWithRetry(url, {
+  const response = await fetch(
+    provider === 'gemini'
+      ? `${baseUrl}/models/${model}:generateContent?key=${apiKey}`
+      : `${baseUrl}/chat/completions`,
+    {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization:
+          provider === 'gemini' ? undefined : `Bearer ${apiKey}`,
+        'HTTP-Referer': provider === 'openrouter' ? 'https://your-app.com' : undefined,
+        'X-Title': provider === 'openrouter' ? 'Your App Name' : undefined,
+      },
       body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    if (req.stream) {
-      // Stream handling (NDJSON / SSE depending on provider)
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('No stream available');
-      let finalText = '';
-      const decoder = new TextDecoder();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        finalText += chunk;
-      }
-      return { text: finalText, raw: null };
     }
+  );
 
-    const data = await res.json();
-
-    let text = '';
-    if (provider === 'gemini') {
-      text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    } else if (provider === 'anthropic') {
-      text = data.content?.[0]?.text ?? '';
-    } else {
-      text = data.choices?.[0]?.message?.content ?? '';
-    }
-
-    return { text, raw: data };
-  } finally {
-    clearTimeout(timeout);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `AI API error (${provider}, ${response.status}): ${errorText}`
+    );
   }
+
+  const data = await response.json();
+
+  // Handle provider-specific response formats
+  let content: string | undefined;
+
+  if (provider === 'anthropic') {
+    content = data.content?.[0]?.text;
+  } else if (provider === 'gemini') {
+    content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  } else {
+    content = data.choices?.[0]?.message?.content;
+  }
+
+  if (!content) {
+    throw new Error(`Empty response from ${provider}`);
+  }
+
+  return { role: 'assistant', content };
 }
