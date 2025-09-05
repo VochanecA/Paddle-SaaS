@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { chatWithAI, continueConversation, isAIServiceAvailable, AIMessage } from '@/lib/ai';
+import {
+  useState,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+} from 'react';
+import type { AIMessage } from '@/lib/ai';
 
-// Define the props interface
 interface AIChatProps {
   className?: string;
   initialPrompt?: string;
@@ -12,19 +17,17 @@ interface AIChatProps {
   userId: string;
 }
 
-// Define the ref interface
 interface AIChatRef {
   openChat: () => void;
   clearConversation: () => void;
   focusInput: () => void;
 }
 
-// Use forwardRef to handle ref forwarding
 const AIChat = forwardRef<AIChatRef, AIChatProps>(
   (
     {
       className = '',
-      initialPrompt = 'You are DeepSeek, a helpful and knowledgeable AI assistant. Provide clear, concise, and helpful responses to any questions.',
+      initialPrompt = 'You are DeepSeek, a helpful and knowledgeable AI assistant. Provide clear, concise, and helpful responses.',
       title = 'DeepSeek AI Assistant',
       description = 'Ask me anything',
       userId,
@@ -34,20 +37,14 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
     const [message, setMessage] = useState('');
     const [conversation, setConversation] = useState<AIMessage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [aiAvailable, setAiAvailable] = useState(false);
+    const [aiAvailable, setAiAvailable] = useState(true);
     const [isMinimized, setIsMinimized] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Check AI service availability
-    useEffect(() => {
-      const available = isAIServiceAvailable();
-      setAiAvailable(available);
-    }, []);
-
     // Scroll to bottom when conversation updates
     useEffect(() => {
-      scrollToBottom();
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [conversation, isLoading]);
 
     // Expose ref methods
@@ -63,12 +60,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       focusInput: () => inputRef.current?.focus(),
     }));
 
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
-
-    // Handle sending a message
-    const handleSendMessage = async () => {
+    const handleSendMessage = async (): Promise<void> => {
       if (!message.trim() || isLoading || !aiAvailable) return;
 
       setIsLoading(true);
@@ -82,23 +74,39 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       setConversation(updatedConversation);
 
       try {
-        let response: string;
+        const response = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages:
+              conversation.length === 0
+                ? [
+                    { role: 'system', content: initialPrompt },
+                    { role: 'user', content: userMessage },
+                  ]
+                : updatedConversation,
+            userId,
+          }),
+        });
 
-        if (conversation.length === 0) {
-          response = await chatWithAI(userMessage, 'openrouter', initialPrompt, userId, []);
-        } else {
-          const result = await continueConversation(updatedConversation, 'openrouter');
-          response = result.updatedMessages[result.updatedMessages.length - 1].content;
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
         }
 
-        setConversation([...updatedConversation, { role: 'assistant', content: response }]);
+        const data: { content: string } = await response.json();
+
+        setConversation([
+          ...updatedConversation,
+          { role: 'assistant', content: data.content },
+        ]);
       } catch (error) {
         console.error('Error sending message:', error);
         setConversation([
           ...updatedConversation,
           {
             role: 'assistant',
-            content: 'Sorry, I encountered an error processing your request. Please try again in a moment.',
+            content:
+              'Sorry, I encountered an error processing your request. Please try again later.',
           },
         ]);
       } finally {
@@ -106,7 +114,6 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       }
     };
 
-    // Suggested questions
     const suggestedQuestions = [
       'How can I get started?',
       'What can you help me with?',
@@ -114,21 +121,26 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       'Explain like I’m a beginner',
     ];
 
-    const handleSuggestionClick = (question: string) => {
+    const handleSuggestionClick = (question: string): void => {
       setMessage(question);
       setTimeout(() => inputRef.current?.focus(), 100);
     };
 
-    // Minimized chat view
+    // Minimized view
     if (isMinimized) {
       return (
         <div
-          className={`fixed bottom-4 right-4 w-auto bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 sm:p-4 rounded-full shadow-2xl cursor-pointer transform transition-all hover:scale-105 ${className}`}
+          className={`fixed bottom-4 right-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 sm:p-4 rounded-full shadow-2xl cursor-pointer transition-all hover:scale-105 ${className}`}
           onClick={() => setIsMinimized(false)}
         >
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -148,16 +160,20 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       );
     }
 
-    // Full chat view
     return (
       <div
         className={`w-full sm:max-w-4xl mx-auto bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-gray-700/20 flex flex-col max-h-[80vh] ${className}`}
       >
-        {/* Chat Header */}
+        {/* Header */}
         <div className="bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-indigo-500/10 p-4 sm:p-6 rounded-t-3xl border-b border-gray-200/50 dark:border-gray-700/50 flex justify-between items-center">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -167,8 +183,12 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {title}
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {description}
+              </p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -178,7 +198,12 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               title="Clear conversation"
               disabled={conversation.length === 0}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -192,19 +217,29 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-2"
               title="Minimize chat"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
               </svg>
             </button>
           </div>
         </div>
 
-        {/* Chat Messages */}
+        {/* Messages */}
         <div className="flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto">
           {conversation.length === 0 ? (
             <div className="text-center text-gray-600 dark:text-gray-300 py-6">
               <div className="w-12 h-12 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-6 h-6 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  className="w-6 h-6 text-blue-500 dark:text-blue-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -213,11 +248,13 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
                   />
                 </svg>
               </div>
-              <p className="text-sm font-medium mb-4">Hi there! I’m your AI assistant.</p>
+              <p className="text-sm font-medium mb-4">
+                Hi there! I’m your AI assistant.
+              </p>
               <div className="space-y-2">
-                {suggestedQuestions.map((question, index) => (
+                {suggestedQuestions.map((question) => (
                   <button
-                    key={index}
+                    key={question}
                     onClick={() => handleSuggestionClick(question)}
                     className="block w-full text-left p-3 text-sm bg-gray-100/50 dark:bg-gray-800/50 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
                   >
@@ -230,7 +267,9 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
             conversation.map((msg, index) => (
               <div
                 key={index}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}
               >
                 <div
                   className={`max-w-[90%] sm:max-w-[80%] p-4 rounded-2xl shadow-md ${
@@ -242,11 +281,16 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   <div
                     className={`text-xs mt-2 opacity-70 ${
-                      msg.role === 'user' ? 'text-white/70' : 'text-gray-600 dark:text-gray-400'
+                      msg.role === 'user'
+                        ? 'text-white/70'
+                        : 'text-gray-600 dark:text-gray-400'
                     }`}
                   >
                     {msg.role === 'user' ? 'You' : 'AI'} •{' '}
-                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date().toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </div>
                 </div>
               </div>
@@ -273,7 +317,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Chat Input */}
+        {/* Input */}
         <div className="p-4 sm:p-6 border-t border-gray-200/50 dark:border-gray-700/50">
           <div className="flex space-x-3">
             <input
@@ -281,7 +325,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask your AI assistant..."
               className="flex-1 px-4 py-3 bg-gray-100/70 dark:bg-gray-800/70 text-gray-900 dark:text-white border border-gray-300/50 dark:border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
               disabled={isLoading || !aiAvailable}
@@ -292,7 +336,12 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               className="px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all transform hover:scale-105 shadow-md"
               title="Send message"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -304,7 +353,8 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
           </div>
           {!aiAvailable && (
             <p className="text-xs text-red-500 mt-2 text-center">
-              AI service is currently unavailable. Please check your configuration.
+              AI service is currently unavailable. Please check your
+              configuration.
             </p>
           )}
         </div>
