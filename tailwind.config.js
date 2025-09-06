@@ -1,10 +1,9 @@
-// tailwind.config.js
+/** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: "class",
   content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  darkMode: 'class', // enable class-based dark mode
   theme: {
     extend: {
       colors: {
@@ -13,15 +12,13 @@ module.exports = {
         foreground: 'var(--foreground)',
         accent: 'var(--accent)',
         'accent-alt': 'var(--accent-alt)',
+        error: 'var(--error)',
+        success: 'var(--success)',
       },
-      zIndex: {
-        60: '60',
-        70: '70',
-        80: '80',
-        90: '90',
-        100: '100',
+      transitionDuration: {
+        DEFAULT: 'var(--transition-duration)',
       },
     },
   },
   plugins: [],
-};
+}

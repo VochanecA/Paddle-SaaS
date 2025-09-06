@@ -1,3 +1,4 @@
+// src/app/web-app/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -5,15 +6,13 @@ import { createClient } from '@/lib/supabase/client';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import AIChat from '@/components/AIChat';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 
-// This is a client component, so all logic runs in the browser.
 export default function WebAppPage() {
   const [user, setUser] = useState<User | null>(null);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // We are now handling authentication and subscription on the client side.
   useEffect(() => {
     const fetchUserData = async () => {
       setIsLoading(true);
@@ -47,14 +46,8 @@ export default function WebAppPage() {
     };
 
     fetchUserData();
-  }, []); // Empty dependency array ensures this runs once on component mount
+  }, []);
 
-  /**
-   * Checks the subscription status for a user based on their email.
-   * This function is now called on the client side.
-   * @param userEmail The email of the user to check.
-   * @returns A promise that resolves to a boolean indicating if the user has an active or trialing subscription.
-   */
   async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
     const supabase = createClient();
 
@@ -89,7 +82,6 @@ export default function WebAppPage() {
   }
 
   if (isLoading || !user) {
-    // You can add a nice loading spinner or placeholder here
     return (
       <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
         <div className="text-xl text-gray-800 dark:text-gray-200">Loading...</div>
@@ -97,8 +89,6 @@ export default function WebAppPage() {
     );
   }
 
-  // The rest of your existing UI code remains the same.
-  // The theme will now change correctly because the component is a client component.
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700">
       <main className="relative">
@@ -129,9 +119,9 @@ export default function WebAppPage() {
 
         {/* AI Chat Section */}
         <section className="pb-8 px-4 sm:px-6 lg:px-8">
-    <div className="flex-1 min-h-0">
-                  <AIChat className="w-full h-full" userId={user.id} />
-                </div>
+          <div className="flex-1 min-h-0">
+            <AIChat className="w-full h-full" userId={user.id} />
+          </div>
         </section>
 
         {/* Stats Section */}
@@ -159,54 +149,6 @@ export default function WebAppPage() {
             </div>
           </div>
         </section>
-
-        {/* Pro Tips */}
-        {/* <section className="py-12 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 rounded-3xl p-8 border border-amber-200/50 dark:border-amber-800/30">
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-400 dark:to-orange-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                    💡 Pro Tips for Better Conversations
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700 dark:text-gray-300">
-                    <div className="space-y-2">
-                      <p className="flex items-center space-x-2">
-                        <span className="w-2 h-2 bg-blue-500 rounded-full" />
-                        <span>Be specific and detailed in your questions</span>
-                      </p>
-                      <p className="flex items-center space-x-2">
-                        <span className="w-2 h-2 bg-purple-500 rounded-full" />
-                        <span>Ask follow-up questions to dive deeper</span>
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="flex items-center space-x-2">
-                        <span className="w-2 h-2 bg-green-500 rounded-full" />
-                        <span>Use AI for brainstorming and analysis</span>
-                      </p>
-                      <p className="flex items-center space-x-2">
-                        <span className="w-2 h-2 bg-amber-500 rounded-full" />
-                        <span>
-                          Visit{' '}
-                          <Link href="/account" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
-                            account settings
-                          </Link>
-                          {' '}for preferences
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section> */}
       </main>
     </div>
   );

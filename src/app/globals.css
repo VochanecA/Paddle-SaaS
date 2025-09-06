@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Root variables for light theme */
 :root {
@@ -39,40 +41,36 @@
 }
 
 /* Base styles */
-body {
+html, body, #__next {
   background-color: var(--background);
-  color: var(--foreground); /* ✅ keep this */
-  transition: background-color var(--transition-duration),
-              color var(--transition-duration);
-}
-
-/* Utilities tied to variables */
-.bg-background {
-  background-color: var(--background);
-}
-
-.bg-background-alt {
-  background-color: var(--background-alt);
-}
-
-.text-foreground {
   color: var(--foreground);
+  transition: background-color var(--transition-duration), color var(--transition-duration);
+  min-height: 100%;
 }
 
-.text-accent {
-  color: var(--accent);
-}
-
-.text-accent-alt {
-  color: var(--accent-alt);
-}
-
-.text-error {
-  color: var(--error);
-}
-
-.text-success {
-  color: var(--success);
+/* Custom utilities */
+@layer utilities {
+  .bg-background {
+    background-color: var(--background) !important;
+  }
+  .bg-background-alt {
+    background-color: var(--background-alt) !important;
+  }
+  .text-foreground {
+    color: var(--foreground) !important;
+  }
+  .text-accent {
+    color: var(--accent) !important;
+  }
+  .text-accent-alt {
+    color: var(--accent-alt) !important;
+  }
+  .text-error {
+    color: var(--error) !important;
+  }
+  .text-success {
+    color: var(--success) !important;
+  }
 }
 
 /* Blob animations */
@@ -91,14 +89,14 @@ body {
   }
 }
 
-.animate-blob {
-  animation: blob 7s infinite;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2s;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4s;
+@layer utilities {
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
 }

@@ -8,13 +8,14 @@ interface ProvidersProps {
   children: ReactNode;
 }
 
-export const Providers = ({ children }: ProvidersProps) => (
-  <ThemeProvider
-    attribute="class"
-    defaultTheme="system"
-    enableSystem
-    disableTransitionOnChange
-  >
-    {children}
-  </ThemeProvider>
-);
+export function Providers({ children }: ProvidersProps) {
+  return (
+    <ThemeProvider
+      attribute="class"      // uses the "class" strategy for dark mode
+      defaultTheme="system"   // default to system preference
+      enableSystem={true}     // respect OS dark/light mode
+    >
+      {children}
+    </ThemeProvider>
+  );
+}

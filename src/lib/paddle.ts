@@ -188,10 +188,8 @@ export const listSubscriptions = async (
 };
 
 // Vercel edge runtime optimization
-export const config = {
-  runtime: 'edge',
-  regions: ['iad1'],
-};
+export const runtime = 'edge';
+export const preferredRegion = ['iad1'];
 
 // Utility function to check if running on Vercel
 export const isVercel = (): boolean => {

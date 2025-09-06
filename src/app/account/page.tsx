@@ -60,7 +60,7 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-3xl font-bold text-blue-400 dark:text-blue-400">
             Account Overview
           </h1>
           <p className="text-gray-800 dark:text-gray-300">

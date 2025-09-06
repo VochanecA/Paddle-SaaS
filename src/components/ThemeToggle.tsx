@@ -1,26 +1,23 @@
 // ./src/components/ThemeToggle.tsx
 'use client';
-
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-// Renamed iconSize to iconClass for better clarity
 interface ThemeToggleProps {
   showLabel?: boolean;
   className?: string;
   iconClass?: string;
 }
 
-// Updated the function signature to use iconClass
 export function ThemeToggle({ showLabel = false, className = '', iconClass = "w-5 h-5" }: ThemeToggleProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-
+  
   useEffect(() => {
     setMounted(true);
   }, []);
-
+  
   const toggleTheme = () => {
     if (resolvedTheme === 'dark') {
       setTheme('light');
@@ -28,7 +25,7 @@ export function ThemeToggle({ showLabel = false, className = '', iconClass = "w-
       setTheme('dark');
     }
   };
-
+  
   const getThemeIcon = () => {
     if (!mounted) {
       return <Monitor className={iconClass} />;
@@ -38,12 +35,12 @@ export function ThemeToggle({ showLabel = false, className = '', iconClass = "w-
       return <Monitor className={iconClass} />;
     }
     
-    // Apply different text colors based on the theme
+    // Both sun and moon now use orange color
     return resolvedTheme === 'dark' ? 
-      <Moon className={`${iconClass} text-indigo-400`} /> : 
+      <Moon className={`${iconClass} text-orange-500`} /> : 
       <Sun className={`${iconClass} text-orange-500`} />;
   };
-
+  
   if (!mounted) {
     return (
       <button className={`p-2 rounded-full bg-gray-100 dark:bg-gray-800 ${className}`}>
@@ -51,7 +48,7 @@ export function ThemeToggle({ showLabel = false, className = '', iconClass = "w-
       </button>
     );
   }
-
+  
   return (
     <button
       onClick={toggleTheme}

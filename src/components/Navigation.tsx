@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -36,7 +35,6 @@ export function Navigation() {
   const [userName, setUserName] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-
   const { resolvedTheme } = useTheme();
 
   // Close menus when clicking outside
@@ -46,7 +44,6 @@ export function Navigation() {
         setIsUserMenuOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -104,7 +101,7 @@ export function Navigation() {
           <Rocket className="w-7 h-7" />
           SaaS Starter
         </Link>
-
+        
         {/* Desktop Menu */}
         <div className="hidden md:flex items-center gap-6">
           <Link
@@ -113,7 +110,7 @@ export function Navigation() {
           >
             Pricing
           </Link>
-
+          
           {userName ? (
             <div className="relative" ref={userMenuRef}>
               <button
@@ -164,7 +161,7 @@ export function Navigation() {
           
           <ThemeToggle className="shadow-sm hover:shadow-md" />
         </div>
-
+        
         {/* Mobile menu button */}
         <div className="md:hidden flex items-center gap-4">
           <ThemeToggle className="p-2" iconClass="w-6 h-6" />
@@ -178,7 +175,7 @@ export function Navigation() {
           </button>
         </div>
       </div>
-
+      
       {/* Mobile menu panel */}
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-full left-0 right-0 bg-white dark:bg-gray-800 shadow-lg py-6 px-4 z-40 transition-all duration-300 ease-in-out">
@@ -244,9 +241,7 @@ export function Navigation() {
           </div>
           
           <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-
             <ThemeToggle showLabel={true} iconClass="w-5 h-5" />
-
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
             Made with <Heart className="w-4 h-4 text-red-500" /> by Alen

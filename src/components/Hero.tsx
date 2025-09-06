@@ -179,7 +179,7 @@ export function Hero() {
       </div>
 
       {/* Stats Section */}
-      <div className="max-w-7xl mx-auto relative z-10 mt-16 md:mt-24">
+      {/* <div className="max-w-7xl mx-auto relative z-10 mt-16 md:mt-24">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="text-center">
             <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
@@ -200,7 +200,7 @@ export function Hero() {
             <div className="text-gray-600 dark:text-gray-400 mt-2">Pre-built Components</div>
           </div>
         </div>
-      </div>
+      </div> */}
     </section>
   );
 }
