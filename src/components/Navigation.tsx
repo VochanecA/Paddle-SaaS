@@ -1,8 +1,11 @@
 'use client';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
+import type { Session, User as SupabaseUser, AuthChangeEvent } from '@supabase/supabase-js';
 import {
   Menu,
   X,
@@ -18,15 +21,16 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
+// Define a more specific type for the user, improving type safety
+interface User {
+  user_metadata?: {
+    full_name?: string;
+  };
+  email?: string;
+}
+
 interface UserSession {
-  session: {
-    user: {
-      user_metadata?: {
-        full_name?: string;
-      };
-      email?: string;
-    };
-  } | null;
+  session: Session | null;
 }
 
 export function Navigation() {
@@ -36,6 +40,7 @@ export function Navigation() {
   const [mounted, setMounted] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
+  const router = useRouter();
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -52,25 +57,50 @@ export function Navigation() {
     setMounted(true);
   }, []);
 
-  const fetchUser = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession() as { data: UserSession };
-    if (data.session?.user) {
-      const name = data.session.user.user_metadata?.full_name || data.session.user.email;
+  // Use useCallback to memoize the function and prevent unnecessary re-creations
+  const updateUserState = useCallback((session: Session | null) => {
+    if (session?.user) {
+      const name = session.user.user_metadata?.full_name || session.user.email;
       setUserName(name || null);
+    } else {
+      setUserName(null);
     }
   }, []);
 
+  // Use useCallback to ensure this function is stable and can be a dependency
+  const fetchUser = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession() as { data: UserSession };
+    updateUserState(data.session);
+  }, [updateUserState]);
+
   useEffect(() => {
+    const supabase = createClient();
+    
+    // Get initial session
     fetchUser();
-  }, [fetchUser]);
+
+    // Listen to auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+      // The state listener is all that's needed to update the UI
+      updateUserState(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchUser, updateUserState]);
 
   const handleLogout = async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
-    setUserName(null);
-    setIsUserMenuOpen(false);
-    window.location.href = '/';
+    try {
+      await supabase.auth.signOut();
+      setIsUserMenuOpen(false);
+      // Use Next.js router for a cleaner navigation without full page reload
+      router.push('/');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
   };
 
   const closeMobileMenu = useCallback(() => {
