@@ -18,6 +18,7 @@ import {
   LogIn,
   Heart,
   Rocket,
+  Mail, // Added for the email icon
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -37,6 +38,7 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
@@ -62,8 +64,10 @@ export function Navigation() {
     if (session?.user) {
       const name = session.user.user_metadata?.full_name || session.user.email;
       setUserName(name || null);
+      setUserEmail(session.user.email || null);
     } else {
       setUserName(null);
+      setUserEmail(null);
     }
   }, []);
 
@@ -210,6 +214,22 @@ export function Navigation() {
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-full left-0 right-0 bg-white dark:bg-gray-800 shadow-lg py-6 px-4 z-40 transition-all duration-300 ease-in-out">
           <div className="flex flex-col items-start w-full gap-4">
+            {userName && (
+              <>
+                <div className="flex items-center gap-3 w-full py-2">
+                  <UserCircle className="w-6 h-6 text-blue-800 dark:text-blue-400" />
+                  <div className="flex flex-col text-sm">
+                    <span className="font-semibold text-blue-800 dark:text-blue-300">{userName}</span>
+                    {userEmail && (
+                      <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <Mail className="w-4 h-4" /> {userEmail}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <hr className="w-full border-t border-gray-200 dark:border-gray-700 mb-2" />
+              </>
+            )}
             <Link
               href="/"
               className="flex items-center gap-3 text-lg font-medium text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 w-full py-2"
@@ -234,7 +254,7 @@ export function Navigation() {
                   className="flex items-center gap-3 text-lg font-medium text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 w-full py-2"
                   onClick={closeMobileMenu}
                 >
-                  <UserCircle className="w-5 h-5" />
+                  <Settings className="w-5 h-5" />
                   Account
                 </Link>
                 <button
