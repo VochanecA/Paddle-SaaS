@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from '@/lib/supabase/client';
 import { ThemeToggle } from "./ThemeToggle";
 import type { Session } from "@supabase/supabase-js";
 
