@@ -24,6 +24,13 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
     redirect('/auth/login');
   }
 
+  // Give webhook/Stripe time to update the database after successful checkout
+  if (params.checkout_success) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+
+  // Create a unique key that changes when we want to force refresh
+  const refreshKey = params.checkout_success || params.refresh || Date.now().toString();
   const shouldRevalidate = Boolean(params.checkout_success || params.refresh);
 
   return (
@@ -120,7 +127,11 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
                 </div>
               }
             >
-              <SubscriptionManager user={user} forceRefresh={shouldRevalidate} />
+              <SubscriptionManager 
+                key={refreshKey} // Force re-render when refresh is needed
+                user={user} 
+                forceRefresh={shouldRevalidate} 
+              />
             </Suspense>
           </div>
 

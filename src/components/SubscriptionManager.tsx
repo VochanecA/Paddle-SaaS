@@ -461,3 +461,4 @@ export function SubscriptionManager({
       {showCancelModal && <CancelModal subscriptionId={showCancelModal} />}
     </>
   );
+};

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight } from 'lucide-react';
 
+
 export function Hero() {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -16,13 +17,7 @@ export function Hero() {
     setMounted(true);
   }, []);
 
-  const images = [
-    '/bc1.jpg',
-    '/bc2.jpg',
-    '/bc3.jpg',
-    '/bc4.jpg',
-    '/bc5.jpg',
-  ];
+  const images = ['/bc1.jpg', '/m2.jpg', '/m3.jpg'];
 
   const heroTexts = [
     {
@@ -59,9 +54,7 @@ export function Hero() {
 
   if (!mounted) {
     return (
-      <section className="relative py-16 md:py-24 px-4 md:px-8 overflow-hidden">
-        {/* Theme-agnostic skeleton to prevent flash of unstyled content */}
-      </section>
+      <section className="relative py-16 md:py-24 px-4 md:px-8 overflow-hidden" />
     );
   }
 
@@ -69,11 +62,43 @@ export function Hero() {
   const currentText = heroTexts[currentTextIndex];
 
   return (
-    <section
-      className={`relative py-16 md:py-24 px-4 md:px-8 overflow-hidden transition-colors duration-500 ${
-        isLight ? 'bg-white' : 'bg-gray-900'
-      }`}
-    >
+    <section className="relative py-16 md:py-24 px-4 md:px-8 overflow-hidden h-screen flex items-center">
+      {/* Background Images */}
+      <div className="absolute inset-0">
+        {images.map((src, index) => (
+          <Image
+            key={src}
+            src={src}
+            alt={`Background ${index + 1}`}
+            fill
+            className={`object-cover transition-opacity duration-1000 ease-in-out ${
+              index === currentImageIndex ? 'opacity-100' : 'opacity-0'
+            }`}
+            priority={index === 0}
+          />
+        ))}
+        {/* Dark overlay for readability */}
+        <div className="absolute inset-0 bg-black/50"></div>
+      </div>
+
+      {/* Floating Blobs */}
+      <div className="absolute inset-0 overflow-hidden">
+        {isLight ? (
+          <>
+            <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400 opacity-30 rounded-full animate-blob"></div>
+            <div className="absolute top-40 right-20 w-96 h-96 bg-purple-400 opacity-30 rounded-full animate-blob animation-delay-2000"></div>
+            <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-green-400 opacity-30 rounded-full animate-blob animation-delay-4000"></div>
+          </>
+        ) : (
+          <>
+            <div className="absolute top-20 left-10 w-72 h-72 bg-cyan-500 opacity-40 rounded-full animate-blob blur-2xl"></div>
+            <div className="absolute top-40 right-20 w-96 h-96 bg-fuchsia-500 opacity-40 rounded-full animate-blob animation-delay-2000 blur-2xl"></div>
+            <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-indigo-500 opacity-40 rounded-full animate-blob animation-delay-4000 blur-2xl"></div>
+          </>
+        )}
+      </div>
+
+      {/* Content */}
       <div className="max-w-7xl mx-auto relative z-10 flex flex-col md:flex-row items-center md:items-start gap-12">
         {/* Left Column: Content */}
         <div className="md:w-1/2 text-center md:text-left">
@@ -88,58 +113,13 @@ export function Hero() {
 
           {/* Main heading */}
           <h1
-            className={`text-4xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight transition-all duration-1000 ease-in-out ${
-              isLight ? 'text-black' : 'text-white'
-            }`}
+            className={`text-4xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight transition-all duration-1000 ease-in-out text-white`}
           >
-            {currentText.heading.split(' ').map((word, index, arr) => {
-              const gradientWord = word.toLowerCase();
-              const needsGradient = ['faster', 'paddle', 'launching'].includes(gradientWord);
-
-              if (needsGradient) {
-                const firstGradientIndex = arr.findIndex((w) =>
-                  ['faster', 'paddle', 'launching'].includes(w.toLowerCase()),
-                );
-                if (index === firstGradientIndex) {
-                  return (
-                    <span
-                      key={index}
-                      className={`bg-clip-text text-transparent bg-gradient-to-r transition-all duration-1000 ease-in-out ${
-                        isLight
-                          ? 'from-orange-600 to-amber-500'
-                          : 'from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'
-                      }`}
-                    >
-                      {arr.slice(index).join(' ')}
-                    </span>
-                  );
-                }
-                return null;
-              }
-
-              const previousWords = arr.slice(0, index);
-              const hasPreviousGradientWord = previousWords.some((w) =>
-                ['faster', 'paddle', 'launching'].includes(w.toLowerCase()),
-              );
-              if (hasPreviousGradientWord) {
-                return null;
-              }
-
-              return (
-                <span key={index}>
-                  {word}
-                  {index === arr.length - 1 ? '' : ' '}
-                </span>
-              );
-            })}
+            {currentText.heading}
           </h1>
 
           {/* Subheading */}
-          <p
-            className={`text-lg md:text-xl max-w-3xl mx-auto md:mx-0 mb-10 leading-relaxed transition-opacity duration-1000 ease-in-out ${
-              isLight ? 'text-black' : 'text-white'
-            }`}
-          >
+          <p className="text-lg md:text-xl max-w-3xl mx-auto md:mx-0 mb-10 leading-relaxed text-white">
             {currentText.subheading}
           </p>
 
@@ -154,53 +134,13 @@ export function Hero() {
             </Link>
             <Link
               href="/demo"
-              className="border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300 font-medium py-3 px-6 rounded-lg transition-all duration-300"
+              className="border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300"
             >
               View Demo
             </Link>
           </div>
         </div>
-
-        {/* Right Column: Rotating Image Carousel */}
-        <div className="relative w-full md:w-1/2 aspect-video rounded-3xl overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700">
-          {images.map((src, index) => (
-            <Image
-              key={src}
-              src={src}
-              alt={`App screenshot ${index + 1}`}
-              fill
-              className={`object-cover transition-opacity duration-1000 ease-in-out ${
-                index === currentImageIndex ? 'opacity-100' : 'opacity-0'
-              }`}
-              sizes="(max-width: 768px) 100vw, 50vw"
-            />
-          ))}
-        </div>
       </div>
-
-      {/* Stats Section */}
-      {/* <div className="max-w-7xl mx-auto relative z-10 mt-16 md:mt-24">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="text-center">
-            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              100%
-            </div>
-            <div className="text-gray-600 dark:text-gray-400 mt-2">Faster Development</div>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              24/7
-            </div>
-            <div className="text-gray-600 dark:text-gray-400 mt-2">Support Included</div>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              30+
-            </div>
-            <div className="text-gray-600 dark:text-gray-400 mt-2">Pre-built Components</div>
-          </div>
-        </div>
-      </div> */}
     </section>
   );
 }
