@@ -52,6 +52,27 @@ export function Navigation() {
     setMounted(true);
   }, []);
 
+useEffect(() => {
+  const supabase = createClient();
+
+  // Fetch initial user
+  fetchUser();
+
+  // Listen for login/logout changes
+  const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) {
+      const name = session.user.user_metadata?.full_name || session.user.email;
+      setUserName(name || null);
+    } else {
+      setUserName(null);
+    }
+  });
+
+  return () => {
+    authListener.subscription.unsubscribe();
+  };
+}, [fetchUser]);
+
   const fetchUser = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase.auth.getSession() as { data: UserSession };
