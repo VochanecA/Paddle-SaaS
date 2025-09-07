@@ -6,82 +6,38 @@ interface Props {}
 
 export const Navigation: React.FC<Props> = () => { const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false); const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false); const [userName, setUserName] = useState<string | null>(null); const [userEmail, setUserEmail] = useState<string | null>(null); const [mounted, setMounted] = useState<boolean>(false); const userMenuRef = useRef<HTMLDivElement | null>(null); const { resolvedTheme } = useTheme(); const router = useRouter();
 
-// Helper to parse session -> set user info const applySession = useCallback((session: Session | null) => { if (session?.user) { const name = session.user.user_metadata?.full_name ?? null; const email = session.user.email ?? null; setUserName(name ?? email); setUserEmail(email); } else { setUserName(null); setUserEmail(null); } }, []);
+const applySession = useCallback((session: Session | null) => { if (session?.user) { const name = session.user.user_metadata?.full_name ?? null; const email = session.user.email ?? null; setUserName(name ?? email); setUserEmail(email); } else { setUserName(null); setUserEmail(null); } }, []);
 
-// Fetch current session on mount const fetchUser = useCallback(async () => { try { const supabase = createClient(); const { data } = await supabase.auth.getSession(); applySession(data.session ?? null); } catch (err) { // Keep silent in UI but log for debugging in dev // eslint-disable-next-line no-console console.error('Failed to fetch session in Navigation:', err); applySession(null); } }, [applySession]);
+const fetchUser = useCallback(async () => { try { const supabase = createClient(); const { data } = await supabase.auth.getSession(); applySession(data.session ?? null); } catch { applySession(null); } }, [applySession]);
 
-// Close user menu when clicking outside useEffect(() => { const handleClickOutside = (event: MouseEvent) => { if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) { setIsUserMenuOpen(false); } }; document.addEventListener('mousedown', handleClickOutside); return () => document.removeEventListener('mousedown', handleClickOutside); }, []);
+useEffect(() => { const handleClickOutside = (event: MouseEvent) => { if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) { setIsUserMenuOpen(false); } }; document.addEventListener('mousedown', handleClickOutside); return () => document.removeEventListener('mousedown', handleClickOutside); }, []);
 
-// Mount flag (avoids hydration mismatch with next-themes) useEffect(() => { setMounted(true); }, []);
+useEffect(() => { setMounted(true); }, []);
 
-// Subscribe to Supabase auth state changes so the nav updates instantly useEffect(() => { const supabase = createClient();
-
-// initial fetch
-void fetchUser();
+useEffect(() => { const supabase = createClient(); void fetchUser();
 
 const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-  // event can be 'SIGNED_IN' | 'SIGNED_OUT' | 'USER_UPDATED' | etc.
   applySession(session ?? null);
-
-  // If user signed in, optionally refresh route data
-  if (event === 'SIGNED_IN') {
+  if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
     try {
       router.refresh();
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.debug('router.refresh() failed after sign in', e);
-    }
-  }
-
-  // If signed out, refresh to allow server components to revalidate
-  if (event === 'SIGNED_OUT') {
-    try {
-      router.refresh();
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.debug('router.refresh() failed after sign out', e);
-    }
+    } catch {}
   }
 });
 
 return () => {
-  // unsubscribe safely
   try {
     listener?.subscription?.unsubscribe();
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.debug('Failed to unsubscribe auth listener', e);
-  }
+  } catch {}
 };
 
 }, [applySession, fetchUser, router]);
 
-const handleLogout = useCallback(async () => { try { const supabase = createClient(); const { error } = await supabase.auth.signOut(); if (error) { // eslint-disable-next-line no-console console.error('Error signing out:', error.message); } // clear local UI state immediately setUserName(null); setUserEmail(null);
-
-// close menus and navigate to home -- use replace to avoid back nav to protected page
-  setIsUserMenuOpen(false);
-  setIsMobileMenuOpen(false);
-  try {
-    // keep SPA experience: refresh server components and navigate
-    router.replace('/');
-    router.refresh();
-  } catch (e) {
-    // fallback to full reload if router methods are not available for some reason
-    // eslint-disable-next-line no-console
-    console.debug('Router navigation failed on sign out, falling back to reload', e);
-    // eslint-disable-next-line no-restricted-globals
-    window.location.href = '/';
-  }
-} catch (err) {
-  // eslint-disable-next-line no-console
-  console.error('Unexpected error during logout', err);
-}
-
-}, [router]);
+const handleLogout = useCallback(async () => { try { const supabase = createClient(); const { error } = await supabase.auth.signOut(); if (error) {} setUserName(null); setUserEmail(null); setIsUserMenuOpen(false); setIsMobileMenuOpen(false); try { router.replace('/'); router.refresh(); } catch { window.location.href = '/'; } } catch {} }, [router]);
 
 const closeMobileMenu = useCallback(() => { setIsMobileMenuOpen(false); }, []);
 
-// Avoid rendering interactive UI until mounted (prevents theme/content flicker) if (!mounted) { return ( <nav className="relative py-6 px-4 md:px-8 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"> <div className="max-w-7xl mx-auto flex justify-between items-center"> <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" /> <div className="hidden md:flex items-center gap-4"> <div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" /> <div className="h-10 w-10 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse" /> </div> </div> </nav> ); }
+if (!mounted) { return ( <nav className="relative py-6 px-4 md:px-8 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"> <div className="max-w-7xl mx-auto flex justify-between items-center"> <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" /> <div className="hidden md:flex items-center gap-4"> <div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" /> <div className="h-10 w-10 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse" /> </div> </div> </nav> ); }
 
 const isLight = resolvedTheme === 'light';
 
@@ -90,8 +46,7 @@ href="/"
 className="text-2xl font-bold text-blue-800 dark:text-blue-400 flex items-center gap-2 z-20 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
 > <Rocket className="w-7 h-7" /> SaaS Starter </Link>
 
-{/* Desktop Menu */}
-    <div className="hidden md:flex items-center gap-6">
+<div className="hidden md:flex items-center gap-6">
       <Link
         href="/pricing"
         className="text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-medium transition-colors"
@@ -161,7 +116,6 @@ className="text-2xl font-bold text-blue-800 dark:text-blue-400 flex items-center
       <ThemeToggle className="shadow-sm hover:shadow-md" />
     </div>
 
-    {/* Mobile menu button */}
     <div className="md:hidden flex items-center gap-4">
       <ThemeToggle className="p-2" iconClass="w-6 h-6" />
       <button
@@ -175,11 +129,9 @@ className="text-2xl font-bold text-blue-800 dark:text-blue-400 flex items-center
     </div>
   </div>
 
-  {/* Mobile menu panel */}
   {isMobileMenuOpen && (
     <div className="md:hidden absolute top-full left-0 right-0 bg-white dark:bg-gray-800 shadow-lg py-6 px-4 z-40 transition-all duration-300 ease-in-out">
       <div className="flex flex-col items-start w-full gap-4">
-        {/* show user info when logged in */}
         {userName ? (
           <div className="w-full px-2 py-2 border-b border-gray-100 dark:border-gray-700">
             <div className="flex items-center gap-3">
