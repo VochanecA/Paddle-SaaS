@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
-import type { Session, User as SupabaseUser, AuthChangeEvent } from '@supabase/supabase-js';
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import {
   Menu,
   X,
@@ -18,41 +18,36 @@ import {
   LogIn,
   Heart,
   Rocket,
-  Mail, // Added for the email icon
+  Mail,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
-
-// Define a more specific type for the user, improving type safety
-interface User {
-  user_metadata?: {
-    full_name?: string;
-  };
-  email?: string;
-}
 
 interface UserSession {
   session: Session | null;
 }
 
-export function Navigation() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+export function Navigation(): JSX.Element {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState<boolean>(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const router = useRouter();
+  const pathname = usePathname();
 
   // Close menus when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent): void => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   useEffect(() => {
@@ -60,7 +55,7 @@ export function Navigation() {
   }, []);
 
   // Use useCallback to memoize the function and prevent unnecessary re-creations
-  const updateUserState = useCallback((session: Session | null) => {
+  const updateUserState = useCallback((session: Session | null): void => {
     if (session?.user) {
       const name = session.user.user_metadata?.full_name || session.user.email;
       setUserName(name || null);
@@ -71,43 +66,55 @@ export function Navigation() {
     }
   }, []);
 
-  // Use useCallback to ensure this function is stable and can be a dependency
-  const fetchUser = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession() as { data: UserSession };
-    updateUserState(data.session);
-  }, [updateUserState]);
-
   useEffect(() => {
     const supabase = createClient();
     
     // Get initial session
-    fetchUser();
+    const getInitialSession = async (): Promise<void> => {
+      const { data } = await supabase.auth.getSession() as { data: UserSession };
+      updateUserState(data.session);
+    };
+    
+    getInitialSession().catch((error) => {
+      console.error('Error fetching initial session:', error);
+    });
 
     // Listen to auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      // The state listener is all that's needed to update the UI
-      updateUserState(session);
+      // Handle specific events that indicate auth state changes
+      if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
+        updateUserState(session);
+        
+        // Redirect to home page after sign out
+        if (event === 'SIGNED_OUT' && pathname !== '/') {
+          router.push('/');
+        }
+      }
     });
 
-    return () => subscription.unsubscribe();
-  }, [fetchUser, updateUserState]);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [updateUserState, router, pathname]);
 
-  const handleLogout = async () => {
+  const handleLogout = async (): Promise<void> => {
     const supabase = createClient();
     try {
       await supabase.auth.signOut();
       setIsUserMenuOpen(false);
-      // Use Next.js router for a cleaner navigation without full page reload
+      setIsMobileMenuOpen(false);
+      
+      // Always redirect to home page after logout
       router.push('/');
+      router.refresh(); // Ensure fresh state
     } catch (error) {
       console.error('Error logging out:', error);
     }
   };
 
-  const closeMobileMenu = useCallback(() => {
+  const closeMobileMenu = useCallback((): void => {
     setIsMobileMenuOpen(false);
   }, []);
 
@@ -148,10 +155,11 @@ export function Navigation() {
           {userName ? (
             <div className="relative" ref={userMenuRef}>
               <button
-                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                onClick={(): void => setIsUserMenuOpen(!isUserMenuOpen)}
                 className="flex items-center gap-2 text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-medium transition-colors"
                 aria-expanded={isUserMenuOpen}
                 aria-haspopup="true"
+                type="button"
               >
                 <UserCircle className="w-6 h-6" />
                 <span className="hidden lg:inline">{userName.split(' ')[0]}</span>
@@ -161,7 +169,7 @@ export function Navigation() {
                   <Link 
                     href="/account" 
                     className="flex items-center gap-2 px-4 py-2 text-sm text-blue-800 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 w-full text-left transition-colors"
-                    onClick={() => setIsUserMenuOpen(false)}
+                    onClick={(): void => setIsUserMenuOpen(false)}
                   >
                     <Settings className="w-4 h-4" />
                     Account
@@ -169,6 +177,7 @@ export function Navigation() {
                   <button 
                     onClick={handleLogout} 
                     className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 w-full text-left transition-colors"
+                    type="button"
                   >
                     <LogOut className="w-4 h-4" />
                     Sign Out
@@ -200,10 +209,11 @@ export function Navigation() {
         <div className="md:hidden flex items-center gap-4">
           <ThemeToggle className="p-2" iconClass="w-6 h-6" />
           <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={(): void => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 rounded-md text-blue-800 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
             aria-label="Toggle mobile menu"
             aria-expanded={isMobileMenuOpen}
+            type="button"
           >
             {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
@@ -258,11 +268,12 @@ export function Navigation() {
                   Account
                 </Link>
                 <button
-                  onClick={() => {
+                  onClick={(): void => {
                     handleLogout();
                     closeMobileMenu();
                   }}
                   className="flex items-center gap-3 text-lg font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 w-full py-2 text-left"
+                  type="button"
                 >
                   <LogOut className="w-5 h-5" />
                   Sign Out
@@ -291,7 +302,7 @@ export function Navigation() {
           </div>
           
           <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <ThemeToggle showLabel={true} iconClass="w-5 h-5" />
+            <ThemeToggle showLabel iconClass="w-5 h-5" />
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
             Made with <Heart className="w-4 h-4 text-red-500" /> by Alen 2025
