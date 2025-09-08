@@ -4,6 +4,143 @@ import { redirect } from 'next/navigation';
 import { SubscriptionManager } from '@/components/SubscriptionManager';
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { SubscriptionTable } from '@/components/SubscriptionTable';
+
+// Interface for Paddle subscription
+interface PaddleSubscription {
+  id: string;
+  status: string;
+  customer_id: string;
+  items?: Array<{
+    price: {
+      product_id: string;
+      unit_price: {
+        amount: string;
+        currency_code: string;
+      };
+      description?: string; // plan/price description
+    };
+  }>;
+}
+
+// Interface for Paddle portal session response
+interface PaddlePortalSession {
+  data: {
+    urls: {
+      general: {
+        overview: string;
+      };
+      subscriptions: Array<{
+        id: string;
+        cancel_subscription?: string;
+        update_subscription_payment_method?: string;
+      }>;
+    };
+  };
+}
+
+// Interface for portal data
+interface PortalData {
+  overview: string | null;
+  subscriptions: Array<{
+    id: string;
+    cancel_subscription?: string;
+    update_subscription_payment_method?: string;
+    status?: string;
+    plan_name?: string;
+    price?: string;
+  }>;
+}
+
+// Function to generate Paddle customer portal session with subscription deep links
+async function generatePaddlePortalLink(customerId: string): Promise<PortalData> {
+  try {
+    // Get subscriptions with status + items
+    const response = await fetch(
+      `https://sandbox-api.paddle.com/subscriptions?customer_id=${customerId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${process.env.PADDLE_API_KEY}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Paddle API response (subscriptions):', errorText);
+      throw new Error(`Paddle API error: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as { data?: PaddleSubscription[] };
+    const subscriptions = data.data ?? [];
+
+    // Extract subscription IDs
+    const subscriptionIds = subscriptions.map((sub) => sub.id);
+
+    // Request portal session
+    const requestBody =
+      subscriptionIds.length > 0 ? { subscription_ids: subscriptionIds } : {};
+
+    const portalResponse = await fetch(
+      `https://sandbox-api.paddle.com/customers/${customerId}/portal-sessions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.PADDLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!portalResponse.ok) {
+      const errorText = await portalResponse.text();
+      console.error('Paddle API response (portal session):', errorText);
+      throw new Error(`Paddle API error: ${portalResponse.statusText}`);
+    }
+
+    const portalData = (await portalResponse.json()) as PaddlePortalSession;
+
+    // Merge status + plan name + price into subscriptions
+const subscriptionsWithStatus =
+  portalData.data?.urls?.subscriptions.map((sub) => {
+    const match = subscriptions.find((s) => s.id === sub.id);
+
+    const firstItem = match?.items?.[0];
+    const priceAmountRaw = firstItem?.price.unit_price.amount;
+    const priceCurrency = firstItem?.price.unit_price.currency_code;
+    const planName =
+      firstItem?.price.description || `Product ${firstItem?.price.product_id}`;
+
+    let formattedPrice: string | undefined;
+    if (priceAmountRaw && priceCurrency) {
+      const normalized = Number(priceAmountRaw) / 100; // cents → major unit
+      formattedPrice = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: priceCurrency,
+        minimumFractionDigits: 2,
+      }).format(normalized);
+    }
+
+    return {
+      ...sub,
+      status: match?.status ?? 'inactive',
+      plan_name: planName,
+      price: formattedPrice,
+    };
+  }) || [];
+
+
+    return {
+      overview: portalData.data?.urls?.general?.overview || null,
+      subscriptions: subscriptionsWithStatus,
+    };
+  } catch (error) {
+    console.error('Error generating Paddle portal link:', error);
+    return { overview: null, subscriptions: [] };
+  }
+}
 
 interface AccountPageProps {
   searchParams: Promise<{
@@ -24,14 +161,26 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
     redirect('/auth/login');
   }
 
-  // Give webhook/Stripe time to update the database after successful checkout
+  // Fetch customer data
+  const { data: customerData } = await supabase
+    .from('customers')
+    .select('customer_id')
+    .eq('email', user.email)
+    .single();
+
+  // Handle checkout refresh
   if (params.checkout_success) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  // Create a unique key that changes when we want to force refresh
-  const refreshKey = params.checkout_success || params.refresh || Date.now().toString();
+  const refreshKey =
+    params.checkout_success || params.refresh || Date.now().toString();
   const shouldRevalidate = Boolean(params.checkout_success || params.refresh);
+
+  // Generate Paddle portal links
+  const portalData = customerData?.customer_id
+    ? await generatePaddlePortalLink(customerData.customer_id)
+    : { overview: null, subscriptions: [] };
 
   return (
     <div className="py-8">
@@ -57,9 +206,6 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
                 <h3 className="text-sm font-medium text-gray-900 dark:text-white">
                   Subscription activated successfully!
                 </h3>
-                <p className="mt-1 text-sm text-gray-800 dark:text-gray-300">
-                  Your subscription is now active and will appear below shortly.
-                </p>
               </div>
             </div>
           </div>
@@ -85,7 +231,9 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Email Address
               </label>
-              <p className="text-gray-900 dark:text-white font-medium">{user.email}</p>
+              <p className="text-gray-900 dark:text-white font-medium">
+                {user.email}
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -107,7 +255,47 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
                 Active
               </span>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Customer ID
+              </label>
+              <p className="text-gray-900 dark:text-white font-medium">
+                {customerData?.customer_id || 'Not available'}
+              </p>
+            </div>
           </div>
+
+          {/* Paddle Customer Portal Button + Subscriptions */}
+          {portalData.overview ? (
+            <div className="mt-6">
+              <a
+                href={portalData.overview}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Manage Billing in Paddle
+              </a>
+
+              {/* Subscription Table */}
+              {portalData.subscriptions.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Subscriptions
+                  </h3>
+                  <SubscriptionTable
+                    subscriptions={portalData.subscriptions}
+                    rowsPerPage={5}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-6 text-sm text-red-600 dark:text-red-400">
+              Unable to load billing portal. Please ensure your account is set up
+              or contact support.
+            </p>
+          )}
         </div>
 
         {/* Main Content Grid */}
@@ -127,108 +315,32 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
                 </div>
               }
             >
-              <SubscriptionManager 
-                key={refreshKey} // Force re-render when refresh is needed
-                user={user} 
-                forceRefresh={shouldRevalidate} 
+              <SubscriptionManager
+                key={refreshKey}
+                user={user}
+                forceRefresh={shouldRevalidate}
               />
             </Suspense>
           </div>
 
-          {/* Web App Access Card */}
+          {/* Web App Access */}
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <div className="flex items-center space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center dark:bg-gray-700">
-                    <svg
-                      className="w-6 h-6 text-blue-600 dark:text-indigo-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                    Web App Access
-                  </h3>
-                  <p className="text-gray-800 dark:text-gray-300 mb-4">
-                    Once you have an active subscription, you&apos;ll be able to
-                    access our web application with all its features.
-                  </p>
-                  <Link
-                    href="/web-app"
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Access Web App
-                    <svg
-                      className="ml-2 w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M14 5l7 7m0 0l-7 7m7-7H3"
-                      />
-                    </svg>
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Additional Info Section */}
-        <div className="mt-8 bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-5 w-5 text-blue-500 dark:text-indigo-400 mt-0.5"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3 flex-1">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                Need Help?
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Web App Access
               </h3>
-              <p className="mt-2 text-sm text-gray-800 dark:text-gray-300">
-                If you have questions about your subscription or billing, feel
-                free to{' '}
-                <a
-                  href="/contact"
-                  className="font-medium underline hover:text-blue-600 dark:hover:text-indigo-400"
-                >
-                  contact our support team
-                </a>{' '}
-                or check our{' '}
-                <a
-                  href="/help"
-                  className="font-medium underline hover:text-blue-600 dark:hover:text-indigo-400"
-                >
-                  help documentation
-                </a>
-                .
+              <p className="text-gray-800 dark:text-gray-300 mb-4">
+                Once you have an active subscription, you can access our web
+                application.
               </p>
+              <Link
+                href="/web-app"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Access Web App
+              </Link>
             </div>
           </div>
         </div>
