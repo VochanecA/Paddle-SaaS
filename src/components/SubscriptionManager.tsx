@@ -346,6 +346,44 @@ export function SubscriptionManager({
 
               <hr className="border-gray-200 dark:border-gray-700 mb-4" />
 
+              {/* Cancellation notice for active subscriptions with canceled_at date */}
+              {subscription.canceled_at && 
+               (subscription.subscription_status === 'active' || subscription.subscription_status === 'trialing') && (
+                <div className="mb-4">
+                  <div className="flex items-start p-3 bg-orange-50 dark:bg-orange-900/20 rounded-md border border-orange-200 dark:border-orange-700">
+                    <svg
+                      className="flex-shrink-0 w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5 mr-3"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <div className="min-w-0">
+                      <div className="text-orange-800 dark:text-orange-300 font-medium text-sm mb-1">
+                        Cancellation Scheduled
+                      </div>
+                      <p className="text-orange-700 dark:text-orange-200 text-sm">
+                        This subscription will be canceled on{' '}
+                        <span className="font-medium">
+                          {new Date(subscription.canceled_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        . You&apos;ll retain access until that date.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-5">
                 {subscription.price_id && (
                   <div>
@@ -391,6 +429,38 @@ export function SubscriptionManager({
                     })}
                   </div>
                 </div>
+                {subscription.canceled_at && (
+                  <div>
+                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">
+                      Canceled At
+                    </div>
+                    <div className="text-gray-900 dark:text-gray-100">
+                      {new Date(subscription.canceled_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                )}
+                {subscription.paused_at && (
+                  <div>
+                    <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">
+                      Paused At
+                    </div>
+                    <div className="text-gray-900 dark:text-gray-100">
+                      {new Date(subscription.paused_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {subscription.scheduled_change && (
