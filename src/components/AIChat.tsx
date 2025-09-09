@@ -75,7 +75,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
     }));
 
     const handleSendMessage = async (imageData?: string): Promise<void> => {
-      const messageToSend = imageData ? "[Image attached] " + message : message;
+      const messageToSend = imageData ? '[Image attached] ' + message : message;
       if ((!messageToSend.trim() && !imageData) || isLoading || !aiAvailable) return;
 
       setIsLoading(true);
@@ -133,20 +133,18 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Check if file is an image
       if (!file.type.startsWith('image/')) {
         alert('Please upload an image file');
         return;
       }
 
-      // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         alert('Please upload an image smaller than 5MB');
         return;
       }
 
       setUploadingImage(true);
-      
+
       const reader = new FileReader();
       reader.onload = (event) => {
         const imageData = event.target?.result as string;
@@ -155,19 +153,6 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
       reader.readAsDataURL(file);
     };
 
-    // const suggestedQuestions = [
-    //   'How can I get started?',
-    //   'What can you help me with?',
-    //   'Tell me about yourself',
-    //   'Explain like I’m a beginner',
-    // ];
-
-    // const handleSuggestionClick = (question: string): void => {
-    //   setMessage(question);
-    //   setTimeout(() => inputRef.current?.focus(), 100);
-    // };
-
-    // Minimized view
     if (isMinimized) {
       return (
         <div
@@ -203,10 +188,10 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
 
     return (
       <div
-        className={`w-full sm:max-w-5xl mx-auto bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-gray-700/20 flex flex-col max-h-[80vh] ${className}`}
+        className={`w-full sm:max-w-5xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col max-h-[80vh] ${className}`}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-indigo-500/10 p-4 sm:p-6 rounded-t-3xl border-b border-gray-200/50 dark:border-gray-700/50 flex justify-between items-center">
+        <div className="bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-indigo-500/10 p-4 sm:p-6 rounded-t-2xl border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
               <svg
@@ -224,18 +209,14 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {title} 🤖
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {description}
-              </p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title} 🤖</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setConversation([])}
-              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-2"
+              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-2 disabled:opacity-40"
               title="Clear conversation"
               disabled={conversation.length === 0}
             >
@@ -258,12 +239,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-2"
               title="Minimize chat"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
               </svg>
             </button>
@@ -274,72 +250,39 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
         <div className="flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto">
           {conversation.length === 0 ? (
             <div className="text-center text-gray-600 dark:text-gray-300 py-6">
-<div className="w-16 h-16 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
-  <Image 
-    src="/smiley2.png" 
-    alt="Smiley face" 
-    width={64} 
-    height={64} 
-    priority
-    style={{ borderRadius: '9999px' }} // to keep the rounded-full style
-  />
-</div>
-              <p className="text-lg font-medium mb-2">
-                Hello! I&apos;m your AI assistant 😊
-              </p>
+              <div className="w-16 h-16 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Image
+                  src="/smiley2.png"
+                  alt="Smiley face"
+                  width={64}
+                  height={64}
+                  priority
+                  style={{ borderRadius: '9999px' }}
+                />
+              </div>
+              <p className="text-lg font-medium mb-2">Hello! I&apos;m your AI assistant 😊</p>
               <p className="text-sm mb-6">
-                I can help answer questions, analyze images, and provide insights.
-                How can I assist you today? 
+                I can help answer questions, analyze images, and provide insights. How can I assist you today?
               </p>
-              {/* <div className="space-y-2">
-                {suggestedQuestions.map((question) => (
-                  <button
-                    key={question}
-                    onClick={() => handleSuggestionClick(question)}
-                    className="block w-full text-left p-3 text-sm bg-gray-100/50 dark:bg-gray-800/50 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div> */}
             </div>
           ) : (
             conversation.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex ${
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
+              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[90%] sm:max-w-[80%] p-4 rounded-2xl shadow-md ${
                     msg.role === 'user'
                       ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-br-none'
-                      : 'bg-gray-100/70 dark:bg-gray-800/70 text-gray-900 dark:text-white rounded-bl-none'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white rounded-bl-none'
                   }`}
                 >
-                  {/* {msg.image && (
-                    <div className="mb-3">
-                      <img 
-                        src={msg.image} 
-                        alt="Uploaded" 
-                        className="max-w-full h-auto rounded-lg max-h-40 object-contain"
-                      />
-                    </div>
-                  )} */}
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   <div
                     className={`text-xs mt-2 opacity-70 ${
-                      msg.role === 'user'
-                        ? 'text-white/70'
-                        : 'text-gray-600 dark:text-gray-400'
+                      msg.role === 'user' ? 'text-white/70' : 'text-gray-600 dark:text-gray-400'
                     }`}
                   >
                     {msg.role === 'user' ? 'You' : 'AI'} •{' '}
-                    {new Date().toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               </div>
@@ -347,17 +290,17 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
           )}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100/70 dark:bg-gray-800/70 text-gray-900 dark:text-white p-4 rounded-2xl rounded-bl-none max-w-[90%] sm:max-w-[80%] shadow-md">
+              <div className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white p-4 rounded-2xl rounded-bl-none max-w-[90%] sm:max-w-[80%] shadow-md">
                 <div className="flex space-x-1 items-center">
                   <div className="w-2 h-2 bg-blue-500/70 rounded-full animate-bounce"></div>
                   <div
                     className="w-2 h-2 bg-blue-500/70 rounded-full animate-bounce"
                     style={{ animationDelay: '0.1s' }}
-                  ></div>
+                  />
                   <div
                     className="w-2 h-2 bg-blue-500/70 rounded-full animate-bounce"
                     style={{ animationDelay: '0.2s' }}
-                  ></div>
+                  />
                   <span className="text-xs ml-2 font-medium">
                     {uploadingImage ? 'Analyzing image...' : 'Thinking...'}
                   </span>
@@ -369,8 +312,8 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
         </div>
 
         {/* Input */}
-        <div className="p-4 sm:p-6 border-t border-gray-200/50 dark:border-gray-700/50">
-          <div className="flex space-x-3">
+        <div className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-x-2">
             <input
               type="file"
               ref={fileInputRef}
@@ -381,15 +324,10 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading || !aiAvailable}
-              className="px-4 py-3 bg-gray-200/70 dark:bg-gray-700/70 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300/70 dark:hover:bg-gray-600/70 disabled:bg-gray-400/50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center"
+              className="px-3 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400/50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center"
               title="Upload image"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -405,7 +343,7 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask your AI assistant..."
-              className="flex-1 px-4 py-3 bg-gray-100/70 dark:bg-gray-800/70 text-gray-900 dark:text-white border border-gray-300/50 dark:border-gray-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+              className="flex-1 min-w-0 px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
               disabled={isLoading || !aiAvailable}
             />
             <button
@@ -414,25 +352,14 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
               className="px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all transform hover:scale-105 shadow-md"
               title="Send message"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
               </svg>
             </button>
           </div>
           {!aiAvailable && (
             <p className="text-xs text-red-500 mt-2 text-center">
-              AI service is currently unavailable. Please check your
-              configuration.
+              AI service is currently unavailable. Please check your configuration.
             </p>
           )}
         </div>
@@ -442,5 +369,4 @@ const AIChat = forwardRef<AIChatRef, AIChatProps>(
 );
 
 AIChat.displayName = 'AIChat';
-
 export default AIChat;

@@ -1,4 +1,3 @@
-// src/app/web-app/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,11 +13,17 @@ export default function WebAppPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // ✅ Always scroll to top when this page loads
+    window.scrollTo({ top: 0, behavior: 'auto' });
+
     const fetchUserData = async () => {
       setIsLoading(true);
       const supabase = createClient();
-      
-      const { data: { user: fetchedUser }, error: authError } = await supabase.auth.getUser();
+
+      const {
+        data: { user: fetchedUser },
+        error: authError,
+      } = await supabase.auth.getUser();
 
       if (authError || !fetchedUser) {
         console.error('Authentication error or user not found:', authError);
@@ -34,7 +39,7 @@ export default function WebAppPage() {
 
       // Check subscription status
       const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
-      
+
       if (!isSubscribed) {
         redirect('/account?message=subscription_required');
         return;
@@ -102,16 +107,17 @@ export default function WebAppPage() {
                   Premium AI Assistant Active
                 </span>
               </div>
-              
+
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
                 Chat with{' '}
                 <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 dark:from-blue-400 dark:via-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
                   Advanced AI
                 </span>
               </h1>
-              
+
               <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
-                Experience the power of premium AI assistance. Ask questions, get insights, and unlock your productivity.
+                Experience the power of premium AI assistance. Ask questions, get insights, and unlock your
+                productivity.
               </p>
             </div>
           </div>
@@ -119,8 +125,11 @@ export default function WebAppPage() {
 
         {/* AI Chat Section */}
         <section className="pb-8 px-4 sm:px-6 lg:px-8">
-          <div className="flex-1 min-h-0">
-            <AIChat className="w-full h-full" userId={user.id} />
+          <div className="max-w-5xl mx-auto">
+            {/* ✅ Wrap AIChat in a card with padding so input + button stay inside */}
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6 flex flex-col min-h-[500px]">
+              <AIChat className="flex-1 w-full" userId={user.id} />
+            </div>
           </div>
         </section>
 
