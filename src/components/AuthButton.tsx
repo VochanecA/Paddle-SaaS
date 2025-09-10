@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
 import { signOut } from '@/actions/auth';
 
 /**
@@ -9,8 +8,7 @@ import { signOut } from '@/actions/auth';
  * renders different links based on the authentication state.
  */
 export async function AuthButton() {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = createClient(); // Remove the cookieStore argument
 
   // Get the user from the current session without attempting a refresh
   // This reads the already-refreshed session from the middleware.

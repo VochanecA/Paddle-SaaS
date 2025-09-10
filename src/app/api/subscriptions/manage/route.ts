@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
-//import type { Database } from '@/lib/types';
+// Remove the cookies import since it's handled internally
+// import { cookies } from 'next/headers';
 
 interface ManageSubscriptionRequest {
   subscriptionId: string;
@@ -61,8 +61,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       body: { subscriptionId, action, immediate },
     });
 
-    // Pass the cookies instance to your Supabase client
-    const supabase = createClient(cookies());
+    // FIX: Remove the cookies() argument - call createClient without parameters
+    const supabase = createClient(); // ← This is the fix
 
     // Verify user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser();
