@@ -24,7 +24,7 @@ export function PasswordChangeForm({ userEmail }: PasswordChangeFormProps) {
     try {
       // Validate passwords match
       if (newPassword !== confirmPassword) {
-        toast.error('New passwords do not match');
+        toast.error('New passwords do not match...Please check it');
         return;
       }
 
