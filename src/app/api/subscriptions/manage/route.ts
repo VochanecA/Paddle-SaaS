@@ -62,7 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     // Pass the cookies instance to your Supabase client
-    const supabase = createClient();
+    const supabase = createClient(cookies());
 
     // Verify user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser();
