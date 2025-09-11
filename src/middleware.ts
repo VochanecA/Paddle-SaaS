@@ -16,5 +16,5 @@ export function middleware(request: NextRequest) {
 
 // Limit the middleware to specific paths
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/account/:path*'],
 };
