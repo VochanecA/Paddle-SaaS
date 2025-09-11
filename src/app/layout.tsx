@@ -6,6 +6,8 @@ import React from 'react';
 import { Providers } from '@/components/Providers';
 import { Navigation } from '@/components/Navigation';
 import { ToastProvider } from '@/components/ToastProvider';
+import Footer from '@/components/Footer'
+
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -81,6 +83,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ToastProvider>
             <Navigation />
             <main className="min-h-screen">{children}</main>
+                  <Footer /> 
           </ToastProvider>
         </Providers>
       </body>
