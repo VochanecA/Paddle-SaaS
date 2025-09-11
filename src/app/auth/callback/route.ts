@@ -11,7 +11,8 @@ export async function GET(request: Request) {
     return redirectToError();
   }
 
-  const supabase = createClient(cookies());
+const supabase = createClient();
+
 
   // Exchange the code for session
   const { error } = await supabase.auth.exchangeCodeForSession(code);
