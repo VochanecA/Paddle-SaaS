@@ -151,6 +151,19 @@ export function Navigation(): JSX.Element {
           >
             Pricing
           </Link>
+          {userName && (
+            <>
+              <hr className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
+              <Link
+                href="/web-app"
+                className="flex items-center gap-2 text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 font-medium transition-colors"
+              >
+                <Rocket className="w-5 h-5" />
+                Web App
+              </Link>
+              <hr className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
+            </>
+          )}
           
           {userName ? (
             <div className="relative" ref={userMenuRef}>
@@ -256,7 +269,20 @@ export function Navigation(): JSX.Element {
               <DollarSign className="w-5 h-5" />
               Pricing
             </Link>
-            
+            {userName && (
+              <>
+                <hr className="w-full border-t border-gray-200 dark:border-gray-700 mb-2" />
+                <Link
+                  href="/web-app"
+                  className="flex items-center gap-3 text-lg font-medium text-blue-800 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 w-full py-2"
+                  onClick={closeMobileMenu}
+                >
+                  <Rocket className="w-5 h-5" />
+                  Web App
+                </Link>
+                <hr className="w-full border-t border-gray-200 dark:border-gray-700 mb-2" />
+              </>
+            )}
             {userName ? (
               <>
                 <Link
