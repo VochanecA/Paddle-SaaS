@@ -7,7 +7,7 @@ import { PricingCard } from '@/components/PricingCard';
 const plans = [
   {
     title: 'Starter',
-    price: '$9/month',
+    price: '€15/month',
     priceId: 'pri_01jqns42gg5tdqpaz3wh1ajfes',
     features: [
       '10 Projects',
@@ -18,7 +18,7 @@ const plans = [
   },
   {
     title: 'Pro',
-    price: '$29/month', 
+    price: '€15/month', 
     priceId: 'pri_01jqns42gg5tdqpaz3wh1ajfes',
     features: [
       'Unlimited Projects',
@@ -31,7 +31,7 @@ const plans = [
   },
   {
     title: 'Enterprise',
-    price: '$99/month',
+    price: '€15/month',
     priceId: 'pri_01jqns42gg5tdqpaz3wh1ajfes', 
     features: [
       'Everything in Pro',
@@ -59,8 +59,6 @@ export default function PricingPage() {
 
   return (
     <div className={`min-h-screen py-12 transition-colors duration-300 ${isLight ? 'bg-white' : 'bg-gradient-to-b from-gray-900 to-gray-800'}`}>
-
-      
       <div className="max-w-6xl mx-auto px-4">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4 transition-colors duration-300 bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-500">

@@ -1,11 +1,11 @@
 // src/app/layout.tsx
-// src/app/layout.tsx
 import './globals.css';
 import { Inter } from 'next/font/google';
 import type { Metadata } from 'next';
 import React from 'react';
 import { Providers } from '@/components/Providers';
 import { Navigation } from '@/components/Navigation';
+import { ToastProvider } from '@/components/ToastProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -78,8 +78,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${inter.className} bg-background text-foreground transition-colors`}>
         <Providers>
-          <Navigation />
-          <main className="min-h-screen">{children}</main>
+          <ToastProvider>
+            <Navigation />
+            <main className="min-h-screen">{children}</main>
+          </ToastProvider>
         </Providers>
       </body>
     </html>

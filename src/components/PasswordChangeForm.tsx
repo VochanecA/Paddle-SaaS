@@ -1,176 +1,200 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from 'react-hot-toast';
+import { useToast } from '@/components/ToastProvider';
 
 interface PasswordChangeFormProps {
-  userEmail: string;
+  onSuccess?: () => void;
 }
 
-export function PasswordChangeForm({ userEmail }: PasswordChangeFormProps) {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPasswords, setShowPasswords] = useState(false);
+interface FormState {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+  isLoading: boolean;
+}
 
-  const supabase = createClient();
+const PasswordChangeForm: React.FC<PasswordChangeFormProps> = ({ 
+  onSuccess 
+}) => {
+  const [formState, setFormState] = useState<FormState>({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+    isLoading: false,
+  });
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { addToast } = useToast();
+
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formState.currentPassword.trim()) {
+      newErrors.currentPassword = 'Current password is required';
+    }
+
+    if (!formState.newPassword.trim()) {
+      newErrors.newPassword = 'New password is required';
+    } else if (formState.newPassword.length < 6) {
+      newErrors.newPassword = 'Password must be at least 6 characters long';
+    }
+
+    if (!formState.confirmPassword.trim()) {
+      newErrors.confirmPassword = 'Please confirm your new password';
+    } else if (formState.newPassword !== formState.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    setFormState((prev) => ({ ...prev, isLoading: true }));
+    setErrors({});
 
     try {
-      // Validate passwords match
-      if (newPassword !== confirmPassword) {
-        toast.error('New passwords do not match...Please check it');
-        return;
-      }
-
-      // Validate password strength
-      if (newPassword.length < 6) {
-        toast.error('Password must be at least 6 characters long');
-        return;
-      }
-
-      // First, verify current password by signing in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: userEmail,
-        password: currentPassword,
-      });
-
-      if (signInError) {
-        toast.error('Current password is incorrect');
-        return;
-      }
-
-      // Update password
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (updateError) {
-        toast.error(`Failed to update password: ${updateError.message}`);
-        return;
-      }
-
-      toast.success('Password updated successfully');
+      const supabase = createClient();
       
-      // Clear form
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      const { error } = await supabase.auth.updateUser({
+        password: formState.newPassword,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Show success toast
+      addToast({
+        type: 'success',
+        title: 'Success!',
+        message: 'Your password has been successfully changed.',
+      });
+      
+      // Reset form
+      setFormState({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+        isLoading: false,
+      });
+
+      onSuccess?.();
+      
     } catch (error) {
-      console.error('Password change error:', error);
-      toast.error('An unexpected error occurred');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to change password';
+      
+      // Show error toast
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: errorMessage,
+      });
+      
+      setErrors({ submit: errorMessage });
     } finally {
-      setIsLoading(false);
+      setFormState((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const { name, value } = event.target;
+    setFormState((prev) => ({ ...prev, [name]: value }));
+    
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-        Change Password
-      </h2>
-      
-      <form onSubmit={handlePasswordChange} className="space-y-4">
-        <div>
-          <label 
-            htmlFor="currentPassword" 
-            className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1"
-          >
-            Current Password
-          </label>
-          <div className="relative">
-            <input
-              type={showPasswords ? "text" : "password"}
-              id="currentPassword"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-              required
-              disabled={isLoading}
-            />
-          </div>
-        </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Current Password
+        </label>
+        <input
+          type="password"
+          id="currentPassword"
+          name="currentPassword"
+          value={formState.currentPassword}
+          onChange={handleInputChange}
+          disabled={formState.isLoading}
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 dark:bg-gray-800 dark:text-white"
+          aria-describedby={errors.currentPassword ? 'currentPassword-error' : undefined}
+        />
+        {errors.currentPassword && (
+          <p id="currentPassword-error" className="mt-1 text-sm text-red-600 dark:text-red-400">
+            {errors.currentPassword}
+          </p>
+        )}
+      </div>
 
-        <div>
-          <label 
-            htmlFor="newPassword" 
-            className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1"
-          >
-            New Password
-          </label>
-          <div className="relative">
-            <input
-              type={showPasswords ? "text" : "password"}
-              id="newPassword"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-              required
-              minLength={6}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
+      <div>
+        <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          New Password
+        </label>
+        <input
+          type="password"
+          id="newPassword"
+          name="newPassword"
+          value={formState.newPassword}
+          onChange={handleInputChange}
+          disabled={formState.isLoading}
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 dark:bg-gray-800 dark:text-white"
+          aria-describedby={errors.newPassword ? 'newPassword-error' : undefined}
+        />
+        {errors.newPassword && (
+          <p id="newPassword-error" className="mt-1 text-sm text-red-600 dark:text-red-400">
+            {errors.newPassword}
+          </p>
+        )}
+      </div>
 
-        <div>
-          <label 
-            htmlFor="confirmPassword" 
-            className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1"
-          >
-            Confirm New Password
-          </label>
-          <div className="relative">
-            <input
-              type={showPasswords ? "text" : "password"}
-              id="confirmPassword"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-              required
-              minLength={6}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
+      <div>
+        <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Confirm New Password
+        </label>
+        <input
+          type="password"
+          id="confirmPassword"
+          name="confirmPassword"
+          value={formState.confirmPassword}
+          onChange={handleInputChange}
+          disabled={formState.isLoading}
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 dark:bg-gray-800 dark:text-white"
+          aria-describedby={errors.confirmPassword ? 'confirmPassword-error' : undefined}
+        />
+        {errors.confirmPassword && (
+          <p id="confirmPassword-error" className="mt-1 text-sm text-red-600 dark:text-red-400">
+            {errors.confirmPassword}
+          </p>
+        )}
+      </div>
 
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            id="showPasswords"
-            checked={showPasswords}
-            onChange={(e) => setShowPasswords(e.target.checked)}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-          />
-          <label htmlFor="showPasswords" className="ml-2 block text-sm text-gray-600 dark:text-gray-400">
-            Show passwords
-          </label>
+      {errors.submit && (
+        <div className="rounded-md bg-red-50 dark:bg-red-900/50 p-4 border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-800 dark:text-red-200">{errors.submit}</p>
         </div>
+      )}
 
-        <div className="flex items-center justify-between pt-4">
-          <button
-            type="submit"
-            disabled={isLoading || !currentPassword || !newPassword || !confirmPassword}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Updating...
-              </>
-            ) : (
-              'Update Password'
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
+      <button
+        type="submit"
+        disabled={formState.isLoading}
+        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-blue-700 dark:hover:bg-blue-800"
+      >
+        {formState.isLoading ? 'Changing Password...' : 'Change Password'}
+      </button>
+    </form>
   );
-}
+};
+
+export default PasswordChangeForm;

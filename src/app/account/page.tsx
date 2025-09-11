@@ -5,6 +5,7 @@ import { SubscriptionManager } from '@/components/SubscriptionManager';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { SubscriptionTable } from '@/components/SubscriptionTable';
+import PasswordChangeForm from '@/components/PasswordChangeForm';
 
 // --- Interfaces (unchanged) ---
 interface PaddleSubscription {
@@ -188,11 +189,11 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-blue-400">Account Overview</h1>
           <p className="text-gray-800 dark:text-gray-300">
-            Manage your subscriptions, billing, and payment history
+            Manage your subscriptions, billing, and account security
           </p>
         </div>
 
-        {/* Web App Access - moved to top */}
+        {/* Web App Access */}
         <div className="bg-white dark:bg-gray-900 rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
             Web App Access
@@ -208,71 +209,140 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
           </Link>
         </div>
 
-        {/* Account Details Card */}
+        {/* Account Information and Security Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Account Details Card */}
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <svg 
+                className="h-5 w-5 text-gray-600 dark:text-gray-400" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Account Information
+              </h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Email Address
+                </label>
+                <p className="text-gray-900 dark:text-white font-medium">{user.email}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Member Since
+                </label>
+                <p className="text-gray-900 dark:text-white font-medium">
+                  {new Date(user.created_at).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Account Status
+                </label>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-gray-700 dark:text-green-300">
+                  Active
+                </span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Customer ID
+                </label>
+                <p className="text-gray-900 dark:text-white font-medium">
+                  {customerData?.customer_id || 'Not available'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Security Settings Card */}
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <svg 
+                className="h-5 w-5 text-gray-600 dark:text-gray-400" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
+                />
+              </svg>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Security Settings
+              </h2>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">
+              Keep your account secure by updating your password regularly.
+            </p>
+            
+            <PasswordChangeForm />
+          </div>
+        </div>
+
+        {/* Billing Management Card */}
         <div className="bg-white dark:bg-gray-900 rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            Account Details
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Email Address
-              </label>
-              <p className="text-gray-900 dark:text-white font-medium">{user.email}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Member Since
-              </label>
-              <p className="text-gray-900 dark:text-white font-medium">
-                {new Date(user.created_at).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Account Status
-              </label>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-gray-700 dark:text-green-300">
-                Active
-              </span>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Customer ID
-              </label>
-              <p className="text-gray-900 dark:text-white font-medium">
-                {customerData?.customer_id || 'Not available'}
-              </p>
-            </div>
+          <div className="flex items-center gap-2 mb-4">
+            <svg 
+              className="h-5 w-5 text-gray-600 dark:text-gray-400" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+            </svg>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Billing Management
+            </h2>
           </div>
 
           {/* Paddle Customer Portal Button + Subscriptions */}
           {portalData.overview ? (
-            <div className="mt-6">
+            <div>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+                Manage your billing information, payment methods, and subscription details.
+              </p>
               <a
                 href={portalData.overview}
                 className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
               >
+                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
                 Manage Billing in Paddle
               </a>
 
               {portalData.subscriptions.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                    Subscriptions
+                  <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
+                    Active Subscriptions
                   </h3>
                   <SubscriptionTable subscriptions={portalData.subscriptions} rowsPerPage={5} />
                 </div>
               )}
             </div>
           ) : (
-            <p className="mt-6 text-sm text-red-600 dark:text-red-400">
-              Unable to load billing portal. Please ensure your account is set up or contact support.
-            </p>
+            <div className="text-center py-4">
+              <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-red-600 dark:text-red-400">
+                Unable to load billing portal. Please ensure your account is set up or contact support.
+              </p>
+            </div>
           )}
         </div>
 
