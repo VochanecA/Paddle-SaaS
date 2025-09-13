@@ -1,198 +1,235 @@
-// src/app/features/page.tsx
-import { Metadata } from 'next';
-import Image from 'next/image';
-import { FeatureCard, FeatureCardProps } from '@/components/FeatureCard';
-import Link from 'next/link';
+'use client';
 
-// Define feature data with proper typing
-const featuresData: FeatureCardProps[] = [
+import { useState, useEffect } from 'react';
+import { useTheme } from 'next-themes';
+import { CheckCircle, Zap, Shield, BarChart3, Code, Globe, Users, Database, Lock, Cloud, Bell, Workflow } from 'lucide-react';
+
+const features = [
   {
-    title: "Supabase Authentication",
-    description: "Secure, scalable auth with SSR, social logins, and passwordless options out of the box.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-blue-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-blue-900/30" />
-        <Image
-          src="/supabase-logo-icon.png"
-          alt="Supabase logo"
-          width={48}
-          height={48}
-          className="relative w-12 h-12"
-          priority
-        />
-      </div>
-    )
+    title: 'Lightning Fast Performance',
+    description: 'Our optimized architecture delivers sub-second response times even at scale.',
+    icon: Zap,
+    highlights: ['Edge caching', 'CDN integration', 'Optimized queries']
   },
   {
-    title: "Paddle Payments",
-    description: "Global subscriptions and billing, pre-integrated and production-ready.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-green-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-green-900/30" />
-        <Image
-          src="/Paddle_Logo.jpg"
-          alt="Paddle logo"
-          width={48}
-          height={48}
-          className="relative w-12 h-12 object-contain"
-          priority
-        />
-      </div>
-    )
+    title: 'Enterprise-grade Security',
+    description: 'Protect your data with bank-level security measures and compliance certifications.',
+    icon: Shield,
+    highlights: ['SOC 2 compliant', 'End-to-end encryption', 'Regular security audits']
   },
   {
-    title: "Modern Tech Stack",
-    description: "Next.js App Router, Tailwind CSS, and TypeScript for performance and scalability.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-purple-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-purple-900/30" />
-        <Image
-          src="/Next.js_Logo_1.png"
-          alt="Next.js logo"
-          width={48}
-          height={48}
-          className="relative w-12 h-12 object-contain"
-          priority
-        />
-      </div>
-    )
+    title: 'Advanced Analytics',
+    description: 'Gain deep insights with customizable dashboards and real-time reporting.',
+    icon: BarChart3,
+    highlights: ['Custom metrics', 'Export capabilities', 'Real-time data']
   },
   {
-    title: "Responsive Design",
-    description: "Beautiful, mobile-first design that works flawlessly on all devices.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-pink-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-pink-900/30" />
-        <svg className="relative w-12 h-12 text-pink-600 dark:text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-        </svg>
-      </div>
-    )
+    title: 'Developer Friendly',
+    description: 'Comprehensive API and SDKs for seamless integration with your stack.',
+    icon: Code,
+    highlights: ['REST & GraphQL APIs', 'Webhooks', 'Extensive documentation']
   },
   {
-    title: "Analytics Dashboard",
-    description: "Comprehensive analytics to track user behavior and business metrics.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-yellow-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-yellow-900/30" />
-        <svg className="relative w-12 h-12 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      </div>
-    )
+    title: 'Global Infrastructure',
+    description: 'Deploy anywhere with our worldwide network of data centers.',
+    icon: Globe,
+    highlights: ['Multi-region support', '99.9% uptime SLA', 'Auto-scaling']
   },
   {
-    title: "API Integration",
-    description: "Seamless integration with third-party services through robust APIs.",
-    icon: (
-      <div className="relative">
-        <div className="absolute -inset-2 bg-indigo-100 rounded-lg blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 dark:bg-indigo-900/30" />
-        <svg className="relative w-12 h-12 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      </div>
-    )
+    title: 'Team Collaboration',
+    description: 'Work together efficiently with role-based access and sharing controls.',
+    icon: Users,
+    highlights: ['Role-based permissions', 'Shared workspaces', 'Comment threads']
+  },
+  {
+    title: 'Unlimited Storage',
+    description: 'Store as much data as you need without worrying about limits.',
+    icon: Database,
+    highlights: ['Scalable storage', 'Automatic backups', 'Data retention policies']
+  },
+  {
+    title: 'Advanced Access Controls',
+    description: 'Fine-grained permissions to control exactly who can see and do what.',
+    icon: Lock,
+    highlights: ['Custom roles', '2FA enforcement', 'SSO integration']
+  },
+  {
+    title: 'Cloud Native',
+    description: 'Built for the cloud with containerized architecture and microservices.',
+    icon: Cloud,
+    highlights: ['Kubernetes native', 'Disaster recovery', 'Zero-downtime updates']
+  },
+  {
+    title: 'Smart Notifications',
+    description: 'Get alerted about what matters with customizable notification rules.',
+    icon: Bell,
+    highlights: ['Custom alerts', 'Multi-channel delivery', 'Do not disturb']
+  },
+  {
+    title: 'Automated Workflows',
+    description: 'Streamline processes with powerful automation and workflow tools.',
+    icon: Workflow,
+    highlights: ['Visual workflow builder', 'Custom triggers', 'API integrations']
   }
 ];
 
-// Generate metadata for the features page
-export const metadata: Metadata = {
-  title: "Features | My SaaS",
-  description: "Explore all the powerful features of My SaaS platform designed to boost your productivity and streamline workflows.",
-  keywords: ["SaaS features", "productivity tools", "business automation", "workflow management"],
-  openGraph: {
-    title: "Features | My SaaS",
-    description: "Explore all the powerful features of My SaaS platform designed to boost your productivity and streamline workflows.",
-    url: "/features",
-  },
-  twitter: {
-    title: "Features | My SaaS",
-    description: "Explore all the powerful features of My SaaS platform designed to boost your productivity and streamline workflows.",
-  },
-};
+const categories = [
+  { id: 'all', name: 'All Features' },
+  { id: 'performance', name: 'Performance' },
+  { id: 'security', name: 'Security' },
+  { id: 'collaboration', name: 'Collaboration' },
+  { id: 'development', name: 'Development' }
+];
 
-/**
- * Features page component that displays all product features in a responsive grid
- * Includes a hero section and feature cards with proper accessibility and performance optimizations
- */
 export default function FeaturesPage() {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('all');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null; 
+  }
+
+  const isLight = resolvedTheme === 'light';
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Hero Section */}
-      <section className="py-20 md:py-32 px-4 md:px-8 bg-gradient-to-b from-background to-background-alt dark:to-gray-900 relative overflow-hidden">
-        {/* Background decorative elements */}
-        <div className="absolute top-20 left-1/4 w-64 h-64 bg-blue-100 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob dark:bg-blue-900 dark:opacity-10" aria-hidden="true" />
-        <div className="absolute top-40 right-1/4 w-64 h-64 bg-indigo-100 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000 dark:bg-indigo-900 dark:opacity-10" aria-hidden="true" />
-        <div className="absolute bottom-40 left-1/3 w-64 h-64 bg-purple-100 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000 dark:bg-purple-900 dark:opacity-10" aria-hidden="true" />
-        
-        <div className="max-w-7xl mx-auto relative z-10 text-center">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 tracking-tight">
-            Powerful Features for{" "}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              Modern Teams
-            </span>
+    <div className={`min-h-screen py-12 transition-colors duration-300 ${isLight ? 'bg-white' : 'bg-gradient-to-b from-gray-900 to-gray-800'}`}>
+      <div className="max-w-6xl mx-auto px-4">
+        {/* Header Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold mb-4 transition-colors duration-300 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+            Powerful Features
           </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-            Everything you need to build, launch, and grow your SaaS product with confidence.
+          <p className={`text-xl max-w-2xl mx-auto transition-colors duration-300 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+            Everything you need to streamline your workflow, boost productivity, and scale your business.
           </p>
-          <div className="mt-10 flex justify-center">
-            <Link 
-              href="/pricing"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-xl flex items-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-              aria-label="View pricing plans"
+        </div>
+
+        {/* Category Filters */}
+        <div className="flex flex-wrap justify-center gap-4 mb-12">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => setActiveCategory(category.id)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                activeCategory === category.id
+                  ? 'bg-blue-600 text-white'
+                  : isLight
+                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
             >
-              View Pricing
-              <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          </div>
+              {category.name}
+            </button>
+          ))}
         </div>
-      </section>
-      
-      {/* Features Grid Section */}
-      <section className="py-20 px-4 md:px-8 bg-background relative">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featuresData.map((feature, index) => (
-              <FeatureCard
-                key={`${feature.title}-${index}`}
-                title={feature.title}
-                description={feature.description}
-                icon={feature.icon}
-              />
-            ))}
-          </div>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+          {features.map((feature, index) => {
+            const IconComponent = feature.icon;
+            return (
+              <div
+                key={index}
+                className={`rounded-2xl p-6 transition-all duration-300 hover:scale-105 ${
+                  isLight
+                    ? 'bg-white border border-gray-200 shadow-md hover:shadow-lg'
+                    : 'bg-gray-800 border border-gray-700 shadow-lg hover:shadow-xl'
+                }`}
+              >
+                <div className="flex items-center mb-4">
+                  <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                    <IconComponent size={24} />
+                  </div>
+                  <h3 className={`text-xl font-semibold ml-3 transition-colors duration-300 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                    {feature.title}
+                  </h3>
+                </div>
+                <p className={`mb-4 transition-colors duration-300 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                  {feature.description}
+                </p>
+                <ul className="space-y-2">
+                  {feature.highlights.map((highlight, i) => (
+                    <li key={i} className="flex items-start">
+                      <CheckCircle size={16} className="text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+                      <span className={`text-sm transition-colors duration-300 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                        {highlight}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
-      </section>
-      
-      {/* CTA Section */}
-      <section className="py-20 px-4 md:px-8 bg-gradient-to-b from-background to-background-alt dark:to-gray-900">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
-            Ready to Get Started?
+
+        {/* CTA Section */}
+        <div className={`rounded-2xl p-8 text-center transition-colors duration-300 ${isLight ? 'bg-gradient-to-r from-blue-50 to-purple-50' : 'bg-gradient-to-r from-blue-900/30 to-purple-900/30'}`}>
+          <h2 className="text-2xl font-bold mb-4 transition-colors duration-300 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+            Ready to get started?
           </h2>
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Join thousands of satisfied customers using our platform to grow their business.
+          <p className={`mb-6 max-w-2xl mx-auto transition-colors duration-300 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+            Join thousands of teams that are using our platform to transform their workflow and boost productivity.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link 
-              href="/auth/signup"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-4 px-8 rounded-lg transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-              aria-label="Sign up for free trial"
-            >
+            <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
               Start Free Trial
-            </Link>
-            <Link 
-              href="/pricing"
-              className="border border-gray-300 hover:border-gray-400 text-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500 font-medium py-4 px-8 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50"
-              aria-label="View pricing plans"
-            >
-              View Pricing
-            </Link>
+            </button>
+            <button className={`px-6 py-3 rounded-lg font-medium border transition-colors ${
+              isLight 
+                ? 'border-gray-300 text-gray-700 hover:bg-gray-50' 
+                : 'border-gray-600 text-gray-300 hover:bg-gray-800'
+            }`}>
+              Schedule a Demo
+            </button>
           </div>
         </div>
-      </section>
+
+        {/* FAQ Section */}
+        <div className="mt-16">
+          <h2 className="text-2xl font-bold text-center mb-8 transition-colors duration-300 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+            Frequently Asked Questions
+          </h2>
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            <div>
+              <h3 className="font-semibold text-lg mb-2 transition-colors duration-300 text-gray-900 dark:text-white">
+                How easy is it to migrate my data?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 transition-colors duration-300">
+                We provide comprehensive migration tools and support to make your transition seamless. Most customers complete migration in under 48 hours.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg mb-2 transition-colors duration-300 text-gray-900 dark:text-white">
+                Can I customize the platform for my needs?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 transition-colors duration-300">
+                Yes, our platform offers extensive customization options through our API, white-labeling, and custom workflow capabilities.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg mb-2 transition-colors duration-300 text-gray-900 dark:text-white">
+                What kind of support do you offer?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 transition-colors duration-300">
+                All plans include email support with 24-hour response time. Higher tiers include priority support, dedicated account management, and 24/7 phone support.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg mb-2 transition-colors duration-300 text-gray-900 dark:text-white">
+                Do you offer on-premise deployment?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300 transition-colors duration-300">
+                Yes, we offer on-premise deployment options for Enterprise customers with specific security or compliance requirements.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
