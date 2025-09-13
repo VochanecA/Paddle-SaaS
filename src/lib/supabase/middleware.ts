@@ -1,50 +1,25 @@
-import { createServerClient } from "@supabase/ssr";
-import { type NextRequest, NextResponse } from "next/server";
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  const supabase = createMiddlewareClient({ req, res });
 
-export const createClient = (request: NextRequest) => {
-  const supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+  // Check Supabase session
+  const { data: { session } } = await supabase.auth.getSession();
 
-  const supabase = createServerClient(supabaseUrl!, supabaseKey!, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          request.cookies.set(name, value);
-          supabaseResponse.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
-
-  return { supabase, supabaseResponse };
-};
-
-export async function middleware(request: NextRequest) {
-  const { supabase, supabaseResponse } = createClient(request);
-
-  // Refresh session to ensure valid tokens
-  const { data, error } = await supabase.auth.getSession(); // Remove session destructuring
-
-  if (error) {
-    console.error("Middleware session error:", error.message);
-    // Clear invalid session cookies if necessary
-    supabaseResponse.cookies.delete("sb-access-token");
-    supabaseResponse.cookies.delete("sb-refresh-token");
+  // Protect /web-app and /dashboard routes
+  if (req.nextUrl.pathname.startsWith('/web-app') || req.nextUrl.pathname.startsWith('/dashboard')) {
+    if (!session) {
+      // Redirect to login if no session
+      return NextResponse.redirect(new URL('/auth/login', req.url));
+    }
   }
 
-  // If no session, proceed without redirecting (let the page handle it)
-  return supabaseResponse;
+  return res;
 }
 
 export const config = {
-  matcher: ["/auth/:path*", "/account/:path*"],
+  matcher: ['/web-app/:path*', '/api/:path*','/dashboard/:path*'],
 };

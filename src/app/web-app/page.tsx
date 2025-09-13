@@ -1,49 +1,48 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import AIChat from '@/components/AIChat';
-import type { User } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 
 export default function WebAppPage() {
   const [user, setUser] = useState<User | null>(null);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const router = useRouter();
 
   useEffect(() => {
     // Always scroll to top when this page loads
     window.scrollTo({ top: 0, behavior: 'auto' });
 
+    const supabase = createClient();
+
     const fetchUserData = async () => {
       setIsLoading(true);
-      const supabase = createClient();
 
-      // Check session first to avoid AuthSessionMissingError
+      // Check session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !session || !session.user) {
         console.warn('No active session found, redirecting to login');
-        redirect('/auth/login');
+        router.push('/auth/login');
         return;
       }
 
       // Fetch user data
-      const {
-        data: { user: fetchedUser },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
 
       if (userError || !fetchedUser) {
         console.warn('User not found, redirecting to login');
-        redirect('/auth/login');
+        router.push('/auth/login');
         return;
       }
 
       if (!fetchedUser.email) {
         console.warn('User email not found for authenticated user');
-        redirect('/account?message=user_error');
+        router.push('/account?message=user_error');
         return;
       }
 
@@ -52,7 +51,7 @@ export default function WebAppPage() {
 
       if (!isSubscribed) {
         console.warn('No active subscription, redirecting to account');
-        redirect('/account?message=subscription_required');
+        router.push('/account?message=subscription_required');
         return;
       }
 
@@ -63,9 +62,32 @@ export default function WebAppPage() {
 
     fetchUserData().catch((error) => {
       console.warn('Error in fetchUserData:', error.message);
-      redirect('/auth/login');
+      router.push('/auth/login');
     });
-  }, []);
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('Auth event:', event, 'Session:', newSession);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
     const supabase = createClient();
@@ -140,7 +162,6 @@ export default function WebAppPage() {
         {/* AI Chat Section */}
         <section className="pb-8 px-4 sm:px-6 lg:px-8">
           <div className="max-w-5xl mx-auto">
-            {/* Wrap AIChat in a card with padding so input + button stay inside */}
             <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6 flex flex-col min-h-[500px]">
               <AIChat className="flex-1 w-full" userId={user.id} />
             </div>

@@ -73,46 +73,82 @@ export function Navigation(): JSX.Element {
     const supabase = createClient();
     
     // Get initial session
-    const getInitialSession = async (): Promise<void> => {
-      const { data } = await supabase.auth.getSession() as { data: UserSession };
-      updateUserState(data.session);
-    };
-    
-    getInitialSession().catch((error) => {
-      console.error('Error fetching initial session:', error);
-    });
-
-    // Listen to auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      // Handle specific events that indicate auth state changes
-      if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
-        updateUserState(session);
+// Get initial session and validate with server
+  const getInitialSession = async (): Promise<void> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session) {
+      // Validate the session with the server
+      const { data: userData, error } = await supabase.auth.getUser();
+      if (error || !userData.user) {
+        // Session is invalid, clear it
+        await supabase.auth.signOut();
+        updateUserState(null);
+      } else {
+        updateUserState(sessionData.session);
       }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [updateUserState]);
-
-  const handleLogout = async (): Promise<void> => {
-    try {
-      // Explicitly clear user state before signing out
-      setUserName(null);
-      setUserEmail(null);
-      await signOut();
-      setIsUserMenuOpen(false);
-      setIsMobileMenuOpen(false);
-      
-      // Force a refresh of the page to re-fetch the session state
-      router.refresh(); 
-    } catch (error) {
-      console.error('Error logging out:', error);
+    } else {
+      updateUserState(null);
     }
   };
 
+  getInitialSession().catch((error) => {
+    console.error('Error fetching initial session:', error);
+    updateUserState(null); // Clear state on error
+  });
+
+    // Listen to auth changes
+const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+    if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
+      updateUserState(session);
+    }
+  });
+return () => {
+    subscription.unsubscribe();
+  };
+  }, [updateUserState]);
+
+const handleLogout = async (): Promise<void> => {
+  try {
+    const supabase = createClient();
+    // Clear the Supabase session
+    await supabase.auth.signOut();
+    // Clear local storage
+    localStorage.removeItem('supabase.auth.token');
+    // Clear user-token cookie
+    document.cookie = 'user-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    // Clear user state
+    setUserName(null);
+    setUserEmail(null);
+    setIsUserMenuOpen(false);
+    setIsMobileMenuOpen(false);
+    // Redirect to login page
+    router.push('/auth/login');
+  } catch (error) {
+    console.error('Error logging out:', error);
+  }
+};
+
+// ili clearing lokal cookie
+//  const handleLogout = async (): Promise<void> => {
+//   try {
+//     const supabase = createClient();
+//     // Clear the Supabase session
+//     await supabase.auth.signOut();
+//     // Optionally clear local storage
+//     localStorage.removeItem('supabase.auth.token');
+//     // Clear user state
+//     setUserName(null);
+//     setUserEmail(null);
+//     setIsUserMenuOpen(false);
+//     setIsMobileMenuOpen(false);
+//     // Force a refresh
+//     router.refresh();
+//   } catch (error) {
+//     console.error('Error logging out:', error);
+//   }
+// };
   const closeMobileMenu = useCallback((): void => {
     setIsMobileMenuOpen(false);
   }, []);
