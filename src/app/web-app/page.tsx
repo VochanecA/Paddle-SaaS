@@ -13,26 +13,36 @@ export default function WebAppPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // ✅ Always scroll to top when this page loads
+    // Always scroll to top when this page loads
     window.scrollTo({ top: 0, behavior: 'auto' });
 
     const fetchUserData = async () => {
       setIsLoading(true);
       const supabase = createClient();
 
+      // Check session first to avoid AuthSessionMissingError
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        redirect('/auth/login');
+        return;
+      }
+
+      // Fetch user data
       const {
         data: { user: fetchedUser },
-        error: authError,
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (authError || !fetchedUser) {
-        console.error('Authentication error or user not found:', authError);
+      if (userError || !fetchedUser) {
+        console.warn('User not found, redirecting to login');
         redirect('/auth/login');
         return;
       }
 
       if (!fetchedUser.email) {
-        console.error('User email not found for authenticated user');
+        console.warn('User email not found for authenticated user');
         redirect('/account?message=user_error');
         return;
       }
@@ -41,6 +51,7 @@ export default function WebAppPage() {
       const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
 
       if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
         redirect('/account?message=subscription_required');
         return;
       }
@@ -50,7 +61,10 @@ export default function WebAppPage() {
       setIsLoading(false);
     };
 
-    fetchUserData();
+    fetchUserData().catch((error) => {
+      console.warn('Error in fetchUserData:', error.message);
+      redirect('/auth/login');
+    });
   }, []);
 
   async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
@@ -64,7 +78,7 @@ export default function WebAppPage() {
         .single();
 
       if (customerError || !customer) {
-        console.error('Customer not found for email:', userEmail);
+        console.warn('Customer not found for email:', userEmail);
         return false;
       }
 
@@ -75,13 +89,13 @@ export default function WebAppPage() {
         .in('subscription_status', ['active', 'trialing']);
 
       if (subscriptionsError) {
-        console.error('Error checking subscriptions:', subscriptionsError);
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
         return false;
       }
 
       return !!(subscriptions && subscriptions.length > 0);
     } catch (error) {
-      console.error('Error checking subscription status:', error);
+      console.warn('Error checking subscription status:', (error as Error).message);
       return false;
     }
   }
@@ -126,7 +140,7 @@ export default function WebAppPage() {
         {/* AI Chat Section */}
         <section className="pb-8 px-4 sm:px-6 lg:px-8">
           <div className="max-w-5xl mx-auto">
-            {/* ✅ Wrap AIChat in a card with padding so input + button stay inside */}
+            {/* Wrap AIChat in a card with padding so input + button stay inside */}
             <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6 flex flex-col min-h-[500px]">
               <AIChat className="flex-1 w-full" userId={user.id} />
             </div>

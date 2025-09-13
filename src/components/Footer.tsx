@@ -75,9 +75,9 @@ export default function Footer() {
                 <Link href="/pricing" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Pricing
                 </Link>
-                <Link href="/integrations" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                {/* <Link href="/integrations" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Integrations
-                </Link>
+                </Link> */}
                 <Link href="/updates" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Updates
                 </Link>
@@ -93,9 +93,9 @@ export default function Footer() {
                 <Link href="/careers" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Careers
                 </Link>
-                <Link href="/blog" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                {/* <Link href="/blog" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Blog
-                </Link>
+                </Link> */}
                 <Link href="/press" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Press
                 </Link>
@@ -111,9 +111,9 @@ export default function Footer() {
                 <Link href="/support" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Contact Support
                 </Link>
-                <Link href="/community" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                {/* <Link href="/community" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Community
-                </Link>
+                </Link> */}
                 <Link href="/status" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   System Status
                 </Link>
@@ -132,12 +132,12 @@ export default function Footer() {
                 <Link href="/refunds" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Refund Policy
                 </Link>
-                <Link href="/security" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                {/* <Link href="/security" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Security
                 </Link>
                 <Link href="/compliance" className={`hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
                   Compliance
-                </Link>
+                </Link> */}
               </nav>
             </div>
           </div>

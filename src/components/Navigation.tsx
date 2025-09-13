@@ -21,6 +21,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { signOut } from '@/actions/auth';
 
 interface UserSession {
   session: Session | null;
@@ -64,6 +65,8 @@ export function Navigation(): JSX.Element {
       setUserName(null);
       setUserEmail(null);
     }
+    // Explicitly close the user menu on session change to prevent auto-opening
+    setIsUserMenuOpen(false);
   }, []);
 
   useEffect(() => {
@@ -86,29 +89,25 @@ export function Navigation(): JSX.Element {
       // Handle specific events that indicate auth state changes
       if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
         updateUserState(session);
-        
-        // Redirect to home page after sign out
-        if (event === 'SIGNED_OUT' && pathname !== '/') {
-          router.push('/');
-        }
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [updateUserState, router, pathname]);
+  }, [updateUserState]);
 
   const handleLogout = async (): Promise<void> => {
-    const supabase = createClient();
     try {
-      await supabase.auth.signOut();
+      // Explicitly clear user state before signing out
+      setUserName(null);
+      setUserEmail(null);
+      await signOut();
       setIsUserMenuOpen(false);
       setIsMobileMenuOpen(false);
       
-      // Always redirect to home page after logout
-      router.push('/');
-      router.refresh(); // Ensure fresh state
+      // Force a refresh of the page to re-fetch the session state
+      router.refresh(); 
     } catch (error) {
       console.error('Error logging out:', error);
     }
