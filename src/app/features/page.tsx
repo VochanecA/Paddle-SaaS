@@ -6,7 +6,7 @@ import { CheckCircle, Zap, Shield, BarChart3, Code, Globe, Users, Database, Lock
 
 const features = [
   {
-    title: 'Lightning Fast Performance!',
+    title: 'Lightning Fast Performance!Truly Fast!',
     description: 'Our optimized architecture delivers sub-second response times even at scale.',
     icon: Zap,
     highlights: ['Edge caching', 'CDN integration', 'Optimized queries']
