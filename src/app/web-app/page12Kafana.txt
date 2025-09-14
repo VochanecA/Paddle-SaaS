@@ -1,0 +1,465 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+// Type definitions for type safety
+type ExcuseCategory = 'meeting' | 'emergency' | 'client' | 'delivery' | 'maintenance' | 'other';
+type ExcuseUrgency = 'low' | 'medium' | 'high' | 'critical';
+
+interface ExcuseRequest {
+  duration: number; // in hours
+  urgency: ExcuseUrgency;
+  category: ExcuseCategory;
+  bossType: 'strict' | 'understanding' | 'unpredictable';
+  hasColleague: boolean;
+}
+
+interface ExcuseResult {
+  excuse: string;
+  believability: number; // 1-10
+  timeNeeded: number; // in minutes
+  riskLevel: 'low' | 'medium' | 'high';
+  tips: string[];
+  alternativeExcuses?: string[];
+}
+
+export default function WebAppPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [excuseRequest, setExcuseRequest] = useState<ExcuseRequest>({
+    duration: 1,
+    urgency: 'medium',
+    category: 'meeting',
+    bossType: 'understanding',
+    hasColleague: true
+  });
+  const [excuseResult, setExcuseResult] = useState<ExcuseResult | null>(null);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const router = useRouter();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('Nije pronađena aktivna sesija, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('Korisnik nije pronađen, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      if (!fetchedUser.email) {
+        console.warn('Email korisnika nije pronađen za autentifikovanog korisnika');
+        router.push('/account?message=user_error');
+        return;
+      }
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('Nema aktivne pretplate, preusmjeravanje na nalog');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      setIsLoading(false);
+    };
+    fetchUserData().catch((error) => {
+      console.warn('Greška u fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      if (customerError || !customer) {
+        console.warn('Klijent nije pronađen za email:', userEmail);
+        return false;
+      }
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      if (subscriptionsError) {
+        console.warn('Greška pri provjeri pretplata:', subscriptionsError.message);
+        return false;
+      }
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Greška pri provjeri statusa pretplate:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handleInputChange = (field: keyof ExcuseRequest, value: any) => {
+    setExcuseRequest(prev => ({ ...prev, [field]: value }));
+  };
+
+  const generateExcuse = async () => {
+    if (!user) return;
+    
+    setIsGenerating(true);
+    setError('');
+    setExcuseResult(null);
+    
+    try {
+      const prompt = `Ti je kreativni asistent za izmišljanje izgovora za odlazak s posla da se popije pivo. 
+      
+      Kontekst: Radim od 07:00 do 15:00 sati i trebam izmisliti kreativan izgovor da se podhe na sat-dva sata u kafanu na Somersby, viljamovku pivo sa Irenom i Goranom.
+      
+      Parametri zahtjeva:
+      - Trajanje odsustva: ${excuseRequest.duration} sati
+      - Hitnost: ${excuseRequest.urgency}
+      - Kategorija: ${excuseRequest.category}
+      - Tip šefa: ${excuseRequest.bossType}
+      - Imam kolegu koji će pokriti za mene: ${excuseRequest.hasColleague ? 'Da' : 'Ne'}
+      
+      Molim pruži JSON odgovor sa sljedećom strukturom:
+      {
+        "excuse": "string",
+        "believability": number (1-10),
+        "timeNeeded": number (u minutama),
+        "riskLevel": "low"|"medium"|"high",
+        "tips": ["string"],
+        "alternativeExcuses": ["string", "string"]
+      }
+      
+      Vodi računa o sljedećem:
+      1. Izgovor mora biti kreativan, uvjerljiv i prilagođen parametrima
+      2. Što viša hitnost, hitniji izgovor
+      3. Različite kategorije trebaju dati različite tipove izgovora
+      4. Za strogog šefa trebaju formalniji izgovori
+      5. Ako ima kolegu koji pokriva, rizik je manji
+      6. Dodaj savjete kako izgovor učiniti uvjerljivijim
+      7. Ukludi i 2-3 alternativna izgovora kao rezervu`;
+
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'Ti si kreativni asistent za izmišljanje izgovora koji pruža JSON odgovore.' },
+            { role: 'user', content: prompt }
+          ],
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Neuspješno generisanje izgovora');
+      }
+      
+      const data = await response.json();
+      const content = data.content;
+      
+      // Try to extract JSON from the response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsedResult: ExcuseResult = JSON.parse(jsonMatch[0]);
+          setExcuseResult(parsedResult);
+        } catch (parseError) {
+          console.error('Neuspješno parsiranje JSON odgovora:', parseError);
+          // Fallback to raw response
+          setExcuseResult({
+            excuse: content,
+            believability: 5,
+            timeNeeded: 60,
+            riskLevel: 'medium',
+            tips: ['Nema savjeta dostupnih']
+          });
+        }
+      } else {
+        // Fallback if no JSON found
+        setExcuseResult({
+          excuse: content,
+          believability: 5,
+          timeNeeded: 60,
+          riskLevel: 'medium',
+          tips: ['Nema savjeta dostupnih']
+        });
+      }
+    } catch (err) {
+      console.error('Greška u generisanju:', err);
+      setError('Neuspješno generisanje izgovora. Pokušajte ponovo.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const getRiskColor = (risk: 'low' | 'medium' | 'high') => {
+    switch (risk) {
+      case 'low': return 'text-green-600 dark:text-green-400';
+      case 'medium': return 'text-yellow-600 dark:text-yellow-400';
+      case 'high': return 'text-red-600 dark:text-red-400';
+      default: return 'text-gray-600 dark:text-gray-400';
+    }
+  };
+
+  const getBelievabilityColor = (score: number) => {
+    if (score >= 8) return 'text-green-600 dark:text-green-400';
+    if (score >= 6) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-red-600 dark:text-red-400';
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Učitavanje...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-yellow-100 dark:from-gray-900 dark:to-amber-900/20 transition-all duration-700">
+      <main className="relative">
+        {/* Hero Section */}
+        <section className="pt-8 pb-4 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-amber-100 dark:bg-amber-900/50 border border-amber-200 dark:border-amber-800/50 mb-6">
+                <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse mr-2" />
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Generator izgovora za pivo aktivan
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
+                Kreativni{' '}
+                <span className="bg-gradient-to-r from-amber-600 via-yellow-600 to-orange-600 dark:from-amber-400 dark:via-yellow-400 dark:to-orange-400 bg-clip-text text-transparent">
+                  Izgovori za Kafanu
+                </span>
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                Radite od 07:00 do 15:00? Treba vam sat-dva za za kafanu sa Irenom i Goranom? Generišite kreativne izgovore za bijeg s posla!
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Form Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Kreirajte svoj izgovor</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Koliko sati trebate?
+                  </label>
+                  <select
+                    value={excuseRequest.duration}
+                    onChange={(e) => handleInputChange('duration', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value={0.5}>30 minuta</option>
+                    <option value={1}>1 sat</option>
+                    <option value={2}>2 sata</option>
+                    <option value={3}>3 sata</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Koliko je hitno?
+                  </label>
+                  <select
+                    value={excuseRequest.urgency}
+                    onChange={(e) => handleInputChange('urgency', e.target.value as ExcuseUrgency)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="low">Nije hitno</option>
+                    <option value="medium">Srednje hitno</option>
+                    <option value="high">Itno</option>
+                    <option value="critical">Itno,najitnije</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Tip izgovora
+                  </label>
+                  <select
+                    value={excuseRequest.category}
+                    onChange={(e) => handleInputChange('category', e.target.value as ExcuseCategory)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="meeting">Sastanak</option>
+                    <option value="emergency">Hitna intervencija</option>
+                    <option value="client">Klijent</option>
+                    <option value="delivery">Dostava</option>
+                    <option value="maintenance">Održavanje</option>
+                    <option value="other">Ostalo</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Vaš šef je
+                  </label>
+                  <select
+                    value={excuseRequest.bossType}
+                    onChange={(e) => handleInputChange('bossType', e.target.value as 'strict' | 'understanding' | 'unpredictable')}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="strict">Strog</option>
+                    <option value="understanding">Razumijevajući</option>
+                    <option value="unpredictable">Nepredvidiv</option>
+                  </select>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={excuseRequest.hasColleague}
+                      onChange={(e) => handleInputChange('hasColleague', e.target.checked)}
+                      className="h-4 w-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                      Imam kolegu koji će pokriti za mene
+                    </span>
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={generateExcuse}
+                  disabled={isGenerating}
+                  className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? 'Generišem...' : 'Generiši izgovor'}
+                </button>
+              </div>
+              
+              {/* Error Display */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <div className="text-red-700 dark:text-red-400 font-medium">Greška</div>
+                  <div className="text-red-600 dark:text-red-300 mt-1">{error}</div>
+                </div>
+              )}
+              
+              {/* Results */}
+              {excuseResult && (
+                <div className="mb-6 p-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="mb-4">
+                    <div className="text-lg font-medium text-amber-800 dark:text-amber-300 mb-2">Vaš izgovor:</div>
+                    <div className="text-gray-800 dark:text-gray-200 text-lg italic">&quot;{excuseResult.excuse}&quot;</div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Uvjverljivost</div>
+                      <div className={`text-xl font-bold ${getBelievabilityColor(excuseResult.believability)}`}>
+                        {excuseResult.believability}/10
+                      </div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Vrijeme za pripremu</div>
+                      <div className="text-xl font-bold text-gray-900 dark:text-white">
+                        {excuseResult.timeNeeded} min
+                      </div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Nivo rizika</div>
+                      <div className={`text-xl font-bold ${getRiskColor(excuseResult.riskLevel)}`}>
+                        {excuseResult.riskLevel === 'low' ? 'Nizak' : 
+                         excuseResult.riskLevel === 'medium' ? 'Srednji' : 'Visok'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {excuseResult.tips && excuseResult.tips.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white mb-2">Savjeti:</div>
+                      <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                        {excuseResult.tips.map((tip, index) => (
+                          <li key={index} className="mb-1">{tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {excuseResult.alternativeExcuses && excuseResult.alternativeExcuses.length > 0 && (
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white mb-2">Alternativni izgovori:</div>
+                      <ul className="list-disc pl-5 text-gray-700 dark:text-gray-300">
+                        {excuseResult.alternativeExcuses.map((excuse, index) => (
+                          <li key={index} className="mb-1">{excuse}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 dark:from-amber-400 dark:to-yellow-400 bg-clip-text text-transparent mb-2">
+                  100+
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Kreativnih izgovora</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 dark:from-yellow-400 dark:to-orange-400 bg-clip-text text-transparent mb-2">
+                  &lt;30s
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Vrijeme generisanja</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 dark:from-orange-400 dark:to-red-400 bg-clip-text text-transparent mb-2">
+                  99%
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Uspješnih bijegova</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

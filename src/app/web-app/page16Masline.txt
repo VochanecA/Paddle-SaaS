@@ -1,0 +1,450 @@
+'use client';
+
+import { useState, useEffect, useCallback, FormEvent, ChangeEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+import { Leaf, Zap, HelpCircle, AlertTriangle } from 'lucide-react';
+
+// Define the shape of the AI response for type safety
+interface AiResponse {
+  content: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+// Define the type for the JSON object expected from the AI
+interface AdviceResult {
+  advice: string;
+}
+
+// Custom components (reused from previous examples)
+interface CustomComponentProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+function CustomCard({ children, className = '' }: CustomComponentProps) {
+  return (
+    <div className={`rounded-xl border bg-card text-card-foreground shadow ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function CustomCardHeader({ children, className = '' }: CustomComponentProps) {
+  return (
+    <div className={`flex flex-col space-y-1.5 p-6 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function CustomCardTitle({ children, className = '' }: CustomComponentProps) {
+  return (
+    <h3 className={`text-2xl font-semibold leading-none tracking-tight ${className}`}>
+      {children}
+    </h3>
+  );
+}
+
+function CustomCardDescription({ children, className = '' }: CustomComponentProps) {
+  return (
+    <p className={`text-sm text-muted-foreground ${className}`}>
+      {children}
+    </p>
+  );
+}
+
+function CustomCardContent({ children, className = '' }: CustomComponentProps) {
+  return (
+    <div className={`p-6 pt-0 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+interface CustomButtonProps extends CustomComponentProps {
+  type?: "button" | "submit" | "reset";
+  disabled?: boolean;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}
+
+function CustomButton({ children, className = '', type = 'button', disabled = false, ...props }: CustomButtonProps) {
+  return (
+    <button
+      className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background bg-blue-600 text-white hover:bg-blue-700 h-10 py-2 px-4 ${className}`}
+      type={type}
+      disabled={disabled}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface CustomLabelProps extends CustomComponentProps {
+  htmlFor: string;
+}
+
+function CustomLabel({ children, htmlFor, className = '' }: CustomLabelProps) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`}
+    >
+      {children}
+    </label>
+  );
+}
+
+interface CustomTextareaProps {
+  id: string;
+  placeholder: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  className?: string;
+}
+
+function CustomTextarea({ id, placeholder, value, onChange, className = '' }: CustomTextareaProps) {
+  return (
+    <textarea
+      id={id}
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      className={`flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    />
+  );
+}
+
+interface CustomAlertProps extends CustomComponentProps {
+  variant?: 'default' | 'destructive';
+}
+
+function CustomAlert({ children, className = '', variant = 'default' }: { children: React.ReactNode; className?: string; variant?: 'default' | 'destructive' }) {
+    const variantClass = variant === 'destructive' ? "text-red-500 border-red-500/50 dark:border-red-500 [&>svg]:text-red-500" : "text-foreground border-border";
+    return (
+      <div role="alert" className={`relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&:has(svg)]:pl-10 ${variantClass} ${className}`}>
+        {children}
+      </div>
+    );
+  }
+  
+function CustomAlertTitle({ children, className = '' }: CustomComponentProps) {
+  return (
+    <h5 className={`mb-1 font-medium leading-none tracking-tight ${className}`}>
+      {children}
+    </h5>
+  );
+}
+
+function CustomAlertDescription({ children, className = '' }: CustomComponentProps) {
+  return (
+    <div className={`text-sm [&_p]:leading-relaxed ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function CustomScrollArea({ children, className = '' }: CustomComponentProps) {
+  return (
+    <div className={`relative overflow-hidden ${className}`}>
+      <div className="h-full w-full rounded-[inherit]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export default function OliveAdvisorPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [inputText, setInputText] = useState<string>('');
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const [generatedAdvice, setGeneratedAdvice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  const options = [
+    'Bolesti i štetočine',
+    'Đubrenje i prihrana',
+    'Rezidba',
+    'Berba i prerada',
+    'Navodnjavanje',
+    'Sadnja i njega mladih stabala',
+  ];
+
+  const handleSelectChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const value = Array.from(e.target.selectedOptions, option => option.value);
+    setSelectedOptions(value);
+  };
+
+  const checkSubscriptionStatus = useCallback(async (userEmail: string): Promise<boolean> => {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      if (customerError || !customer) {
+        console.warn('Customer not found for email:', userEmail);
+        return false;
+      }
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      if (subscriptionsError) {
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
+        return false;
+      }
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (err: unknown) {
+      console.warn('Error checking subscription status:', (err as Error).message);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+      if (!session.user.email) {
+        console.warn('User email not found for authenticated user');
+        router.push('/account?message=user_error');
+        return;
+      }
+      const isSubscribed = await checkSubscriptionStatus(session.user.email);
+      if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      setUser(session.user);
+      setIsLoading(false);
+    };
+    fetchUserData().catch((err: unknown) => {
+      console.warn('Error in fetchUserData:', (err as Error).message);
+      router.push('/auth/login');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          }
+        });
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [router, checkSubscriptionStatus]);
+
+  const generateAdvice = async (e: FormEvent) => {
+    e.preventDefault();
+    if (selectedOptions.length === 0 && !inputText.trim()) {
+      setError('Molimo Vas, odaberite temu ili opišite problem kako bi AI generisao savjet.');
+      return;
+    }
+    setError(null);
+    setGeneratedAdvice(null);
+    setIsGenerating(true);
+
+    const systemPrompt = `
+      Vi ste stručnjak za maslinarstvo i poljoprivredu sa fokusom na mediteransku klimu, posebno Crnu Goru. Vaš zadatak je pružiti precizne, praktične savjete na osnovu upita korisnika. Savjeti trebaju biti jasni, profesionalni i prilagođeni maslinarima. Odgovor mora biti u jednom, validnom JSON objektu sa ključem "advice" koji sadrži savjet.
+      
+      Primjer JSON odgovora:
+      {
+        "advice": "Na osnovu Vašeg opisa, preporučuje se prihrana tla organskim đubrivom prije zime. To će poboljšati kvalitet maslina..."
+      }
+      
+      Ne uključujte nikakav drugi tekst, markdown ili komentare van JSON objekta.
+    `;
+
+    const topicString = selectedOptions.length > 0 ? `Teme: ${selectedOptions.join(', ')}` : '';
+    const userMessage = `Dajte savjet za maslinarstvo na osnovu sljedećeg upita:\n\n---
+    ${topicString}
+    ${inputText.trim().length > 0 ? `Detaljan opis: ${inputText}` : ''}
+    `;
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          model: 'deepseek/deepseek-chat-v3.1:free',
+          temperature: 0.2, // Niska temperatura za precizne, stručne savjete
+          maxTokens: 500,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Došlo je do greške sa AI servisom.');
+      }
+
+      const data: AiResponse = await response.json();
+      const adviceResult = extractJSONFromResponse(data.content);
+
+      if (adviceResult) {
+        setGeneratedAdvice(adviceResult.advice);
+      } else {
+        setGeneratedAdvice(data.content);
+        throw new Error('Format AI odgovora nije validan. Prikazujem sirovi sadržaj.');
+      }
+    } catch (err: unknown) {
+      setError((err as Error).message);
+      console.error('Greška pri generisanju:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const extractJSONFromResponse = (response: string): AdviceResult | null => {
+    try {
+      const jsonMatch = response.match(/```json\n([\s\S]*?)\n```/);
+      if (jsonMatch && jsonMatch[1]) {
+        return JSON.parse(jsonMatch[1]) as AdviceResult;
+      }
+      const firstBrace = response.indexOf('{');
+      const lastBrace = response.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        const jsonString = response.substring(firstBrace, lastBrace + 1);
+        return JSON.parse(jsonString) as AdviceResult;
+      }
+      return JSON.parse(response) as AdviceResult;
+    } catch (e: unknown) {
+      console.error('Neuspjelo parsiranje JSON-a iz AI odgovora:', e);
+      return null;
+    }
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Učitavanje...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              Premium AI Aktivan
+            </span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
+            AI Savjetnik za maslinarstvo
+          </h1>
+          <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+            Pronađite stručne savjete za Vaš maslinjak. Odaberite temu ili opišite problem.
+          </p>
+        </div>
+        <CustomCard className="max-w-4xl mx-auto bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+          <CustomCardHeader>
+            <CustomCardTitle className="text-xl sm:text-2xl text-gray-900 dark:text-white">Postavite Pitanje</CustomCardTitle>
+            <CustomCardDescription>
+              Odaberite jednu ili više tema, te opišite svoj problem.
+            </CustomCardDescription>
+          </CustomCardHeader>
+          <CustomCardContent>
+            <form onSubmit={generateAdvice} className="space-y-6">
+              <div className="space-y-2">
+                <CustomLabel htmlFor="advice-topics" className="text-sm font-medium">Odaberite teme (opcionalno)</CustomLabel>
+                <select 
+                  id="advice-topics"
+                  multiple
+                  value={selectedOptions}
+                  onChange={handleSelectChange}
+                  className="w-full p-2 border border-gray-300 rounded-md bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                >
+                  {options.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <CustomLabel htmlFor="advice-topic" className="text-sm font-medium">Vaš Problem ili Pitanje</CustomLabel>
+                <CustomTextarea
+                  id="advice-topic"
+                  placeholder="Opišite detaljno Vaš problem. Na primjer: 'Listovi na mojim stablima postaju žuti, stari su 10 godina, sorta je Oblica...'"
+                  value={inputText}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setInputText(e.target.value)}
+                  className="bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-700 min-h-[150px]"
+                />
+              </div>
+              {error && (
+                <CustomAlert variant="destructive">
+                  <AlertTriangle className="h-4 w-4 absolute top-4 left-4" />
+                  <CustomAlertTitle>Greška</CustomAlertTitle>
+                  <CustomAlertDescription>{error}</CustomAlertDescription>
+                </CustomAlert>
+              )}
+              <CustomButton
+                type="submit"
+                className={`w-full bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-300 ${isGenerating ? 'opacity-75 cursor-not-allowed' : ''}`}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <>
+                    <span className="mr-2 animate-spin">
+                      <Zap className="w-4 h-4" />
+                    </span>
+                    Generisanje savjeta...
+                  </>
+                ) : (
+                  'Generiši Savjet'
+                )}
+              </CustomButton>
+            </form>
+          </CustomCardContent>
+        </CustomCard>
+
+        {generatedAdvice && (
+          <div className="mt-12 space-y-4">
+            <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white flex items-center justify-center">
+              <Leaf className="w-8 h-8 mr-2" />
+              Vaš Stručni Savjet
+            </h2>
+            <CustomCard>
+              <CustomCardContent className="p-6">
+                <CustomScrollArea className="h-[200px]">
+                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                    {generatedAdvice}
+                  </p>
+                </CustomScrollArea>
+              </CustomCardContent>
+            </CustomCard>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,263 @@
+'use client';
+
+import { useState } from 'react';
+
+export default function LogoCreator() {
+  const [companyName, setCompanyName] = useState('');
+  const [industry, setIndustry] = useState('Technology');
+  const [style, setStyle] = useState('Modern');
+  const [font, setFont] = useState('Sans');
+  const [primaryColor, setPrimaryColor] = useState('#2563eb');
+  const [secondaryColor, setSecondaryColor] = useState('#10b981');
+  const [accentColor, setAccentColor] = useState('#f59e0b');
+  const [iconType, setIconType] = useState('Symbol');
+  const [layout, setLayout] = useState('Left');
+  const [logos, setLogos] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function generateLogos(count = 1) {
+    if (!companyName.trim()) {
+      setError('Please enter a company name.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setLogos([]);
+
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content:
+            'You are an AI logo generator. Always return valid standalone <svg> code only. No explanations. If multiple logos are requested, return them as separate <svg> blocks concatenated together.',
+        },
+        {
+          role: 'user',
+          content: `Create ${count} different ${style} ${iconType} logo${
+            count > 1 ? 's' : ''
+          } for a ${industry} company named "${companyName}". 
+            Each logo must contain both a vector icon and the company name in ${font} style font. 
+            Place the icon ${layout.toLowerCase()} the text. 
+            Use primary color ${primaryColor}, secondary color ${secondaryColor}, and accent color ${accentColor}. 
+            Ensure each logo is unique in composition.`,
+        },
+      ];
+
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const raw = data.content.trim();
+      // Split multiple SVGs
+      const matches = raw.match(/<svg[\s\S]*?<\/svg>/g);
+      if (!matches || matches.length === 0) throw new Error('Invalid SVG output');
+      setLogos(matches);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950">
+      <main className="max-w-5xl mx-auto p-6">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-indigo-600 to-blue-600 text-transparent bg-clip-text">
+          AI Logo Creator
+        </h1>
+
+        {/* Options */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Company Name */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700 md:col-span-2">
+            <label className="block mb-2 font-medium">Company Name</label>
+            <input
+              type="text"
+              placeholder="Enter your company name"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            />
+          </div>
+
+          {/* Industry */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700">
+            <label className="block mb-2 font-medium">Industry</label>
+            <select
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+              className="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option>Technology</option>
+              <option>Healthcare</option>
+              <option>Education</option>
+              <option>Finance</option>
+              <option>Food & Beverage</option>
+              <option>Retail</option>
+              <option>Sports</option>
+            </select>
+          </div>
+
+          {/* Style */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700">
+            <label className="block mb-2 font-medium">Logo Style</label>
+            <select
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+              className="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option>Modern</option>
+              <option>Minimal</option>
+              <option>Playful</option>
+              <option>Professional</option>
+              <option>Abstract</option>
+            </select>
+          </div>
+
+          {/* Font */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700">
+            <label className="block mb-2 font-medium">Font Style</label>
+            <select
+              value={font}
+              onChange={(e) => setFont(e.target.value)}
+              className="w-full p-2 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option>Sans</option>
+              <option>Serif</option>
+              <option>Script</option>
+              <option>Tech</option>
+              <option>Handwritten</option>
+            </select>
+          </div>
+
+          {/* Colors */}
+          {[
+            { label: 'Primary Color', value: primaryColor, setter: setPrimaryColor },
+            { label: 'Secondary Color', value: secondaryColor, setter: setSecondaryColor },
+            { label: 'Accent Color', value: accentColor, setter: setAccentColor },
+          ].map((c) => (
+            <div
+              key={c.label}
+              className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700"
+            >
+              <label className="block mb-2 font-medium">{c.label}</label>
+              <input
+                type="color"
+                value={c.value}
+                onChange={(e) => c.setter(e.target.value)}
+                className="w-16 h-10 p-1 border rounded"
+              />
+            </div>
+          ))}
+
+          {/* Icon Type */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700 md:col-span-2">
+            <label className="block mb-2 font-medium">Logo Type</label>
+            <div className="flex flex-wrap gap-3">
+              {['Symbol', 'Abstract', 'Initials', 'Wordmark', 'Emblem'].map((type) => (
+                <label
+                  key={type}
+                  className={`px-4 py-2 rounded-lg border cursor-pointer ${
+                    iconType === type
+                      ? 'bg-indigo-100 border-indigo-500 text-indigo-800 font-semibold'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="iconType"
+                    value={type}
+                    checked={iconType === type}
+                    onChange={() => setIconType(type)}
+                    className="hidden"
+                  />
+                  {type}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Layout */}
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700 md:col-span-2">
+            <label className="block mb-2 font-medium">Logo Layout</label>
+            <div className="flex flex-wrap gap-3">
+              {['Above', 'Left', 'Right'].map((pos) => (
+                <label
+                  key={pos}
+                  className={`px-4 py-2 rounded-lg border cursor-pointer ${
+                    layout === pos
+                      ? 'bg-indigo-100 border-indigo-500 text-indigo-800 font-semibold'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="layout"
+                    value={pos}
+                    checked={layout === pos}
+                    onChange={() => setLayout(pos)}
+                    className="hidden"
+                  />
+                  {pos}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Generate buttons */}
+        <div className="flex flex-col md:flex-row gap-4">
+          <button
+            onClick={() => generateLogos(1)}
+            disabled={loading}
+            className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl font-semibold shadow hover:opacity-90 transition disabled:opacity-50"
+          >
+            {loading ? 'Generating...' : 'Generate 1 Logo'}
+          </button>
+          <button
+            onClick={() => generateLogos(3)}
+            disabled={loading}
+            className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold shadow hover:opacity-90 transition disabled:opacity-50"
+          >
+            {loading ? 'Generating...' : 'Generate 3 Variations'}
+          </button>
+        </div>
+
+        {/* Results */}
+        <div className="mt-10">
+          {error && (
+            <div className="p-4 bg-red-100 text-red-700 rounded-xl mb-4">
+              Error: {error}
+            </div>
+          )}
+          {logos.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {logos.map((svg, i) => (
+                <div
+                  key={i}
+                  className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700 flex flex-col items-center space-y-3"
+                >
+                  <div
+                    className="flex-1 flex items-center justify-center"
+                    dangerouslySetInnerHTML={{ __html: svg }}
+                  />
+                  <a
+                    href={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`}
+                    download={`logo-variation-${i + 1}.svg`}
+                    className="block w-full text-center py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                  >
+                    Download Logo {i + 1}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

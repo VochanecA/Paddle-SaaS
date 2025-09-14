@@ -1,0 +1,517 @@
+'use client';
+
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+interface Aircraft {
+  type: string;
+  registration: string;
+  airline: string;
+  seats: number;
+  category: 'small' | 'large';
+}
+
+interface FlightRequest {
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  requestedDate: string;
+  requestedTime: string;
+  aircraft: Aircraft;
+  passengers: number;
+  isCharter: boolean;
+}
+
+interface SlotAllocation {
+  flightNumber: string;
+  allocatedTime: string;
+  slotStatus: 'approved' | 'modified' | 'rejected';
+  slotReference: string;
+  constraints: string[];
+  notes: string;
+}
+
+interface RampAllocation {
+  position: string;
+  aircraftType: string;
+  registration: string;
+  airline: string;
+  parkingTime: string;
+  departureTime: string;
+  positionType: 'contact' | 'remote';
+  constraints: string[];
+}
+
+interface Utilization {
+  totalFlights: number;
+  largeAircraft: number;
+  smallAircraft: number;
+  rampUtilization: number;
+  slotUtilization: number;
+}
+
+interface ScheduleRecommendation {
+  slots: SlotAllocation[];
+  ramp: RampAllocation[];
+  utilization: Utilization;
+  warnings: string[];
+  recommendations: string[];
+  iataCompliance: string[];
+}
+
+type FlightRequestField = keyof FlightRequest;
+type AircraftField = keyof Aircraft;
+
+export default function AirportSchedulingPage() {
+  const [flightRequests, setFlightRequests] = useState<FlightRequest[]>([
+    {
+      flightNumber: '',
+      origin: '',
+      destination: 'TIV',
+      requestedDate: new Date().toISOString().split('T')[0],
+      requestedTime: '08:00',
+      aircraft: {
+        type: '',
+        registration: '',
+        airline: '',
+        seats: 0,
+        category: 'small'
+      },
+      passengers: 0,
+      isCharter: false
+    }
+  ]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [recommendation, setRecommendation] = useState<ScheduleRecommendation | null>(null);
+  const [error, setError] = useState('');
+  const router = useRouter();
+
+  const extractJSONFromResponse = useCallback((content: string): ScheduleRecommendation | null => {
+    try {
+      return JSON.parse(content) as ScheduleRecommendation;
+    } catch {
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || content.match(/{[\s\S]*}/);
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          return JSON.parse(jsonMatch[1]) as ScheduleRecommendation;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+  }, []);
+
+  const createFallbackResult = useCallback((content: string): ScheduleRecommendation => {
+    const largeAircraftCount = flightRequests.filter(f => f.aircraft.category === 'large').length;
+    const smallAircraftCount = flightRequests.filter(f => f.aircraft.category === 'small').length;
+    
+    return {
+      slots: [{
+        flightNumber: 'FLIGHT',
+        allocatedTime: '08:00',
+        slotStatus: 'approved',
+        slotReference: 'TIV-SLOT-001',
+        constraints: ['Daylight operations only', 'Ramp capacity limited'],
+        notes: 'Please review manually'
+      }],
+      ramp: [{
+        position: 'Position 1',
+        aircraftType: 'A320',
+        registration: 'REG001',
+        airline: 'Airline',
+        parkingTime: '4 hours',
+        departureTime: '12:00',
+        positionType: 'contact',
+        constraints: ['Large aircraft position']
+      }],
+      utilization: {
+        totalFlights: flightRequests.length,
+        largeAircraft: largeAircraftCount,
+        smallAircraft: smallAircraftCount,
+        rampUtilization: 75,
+        slotUtilization: 80
+      },
+      warnings: ['Manual review required - AI response format issue'],
+      recommendations: ['Verify all allocations with actual airport constraints'],
+      iataCompliance: ['Follow IATA Worldwide Scheduling Guidelines']
+    };
+  }, [flightRequests]);
+
+  const generateSchedule = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    setRecommendation(null);
+    
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an airport slot coordinator expert for Tivat Airport (TIV). Analyze flight requests considering: 
+              - 7 total parking positions (only 2 for large aircraft: A321/B737-900)
+              - Daylight operations only (sunrise to sunset)
+              - IATA Worldwide Scheduling Guidelines
+              - Slot coordination principles
+              Return JSON format: {slots: Array<{flightNumber: string, allocatedTime: string, slotStatus: "approved"|"modified"|"rejected", slotReference: string, constraints: string[], notes: string}>, ramp: Array<{position: string, aircraftType: string, registration: string, airline: string, parkingTime: string, departureTime: string, positionType: "contact"|"remote", constraints: string[]}>, utilization: {totalFlights: number, largeAircraft: number, smallAircraft: number, rampUtilization: number, slotUtilization: number}, warnings: string[], recommendations: string[], iataCompliance: string[]}`
+            },
+            {
+              role: 'user',
+              content: `Analyze these flight requests for Tivat Airport (TIV): ${JSON.stringify(flightRequests)}. Consider: 7 parking positions total, only 2 for large aircraft (A321/B737-900), daylight operations only. Provide optimal slot allocation and ramp assignment.`
+            }
+          ],
+          model: 'deepseek/deepseek-chat-v3.1:free',
+          temperature: 0.1,
+          maxTokens: 3000
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as { content?: string; error?: string };
+      
+      if (!data.content) {
+        throw new Error(data.error || 'No content in AI response');
+      }
+
+      const parsedRecommendation = extractJSONFromResponse(data.content);
+      
+      if (parsedRecommendation) {
+        if (parsedRecommendation.slots && Array.isArray(parsedRecommendation.slots)) {
+          setRecommendation(parsedRecommendation);
+        } else {
+          setRecommendation(createFallbackResult(data.content));
+        }
+      } else {
+        setRecommendation(createFallbackResult(data.content));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate schedule');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [flightRequests, extractJSONFromResponse, createFallbackResult]);
+
+  const addFlightRequest = useCallback(() => {
+    setFlightRequests(prev => [...prev, {
+      flightNumber: '',
+      origin: '',
+      destination: 'TIV',
+      requestedDate: new Date().toISOString().split('T')[0],
+      requestedTime: '08:00',
+      aircraft: { type: '', registration: '', airline: '', seats: 0, category: 'small' },
+      passengers: 0,
+      isCharter: false
+    }]);
+  }, []);
+
+  const updateFlightRequest = useCallback((index: number, field: FlightRequestField, value: string | number | boolean) => {
+    setFlightRequests(prev => prev.map((req, i) => 
+      i === index ? { ...req, [field]: value } : req
+    ));
+  }, []);
+
+  const updateAircraft = useCallback((index: number, field: AircraftField, value: string | number) => {
+    setFlightRequests(prev => prev.map((req, i) => {
+      if (i !== index) return req;
+
+      const updatedAircraft = field === 'type' ? { 
+        ...req.aircraft, 
+        [field]: value,
+        category: (value as string).includes('A321') || (value as string).includes('737-900') ? 'large' : 'small'
+      } : { ...req.aircraft, [field]: value };
+
+      return { ...req, aircraft: updatedAircraft };
+    }));
+  }, []);
+
+  const getStatusColor = useCallback((status: string) => {
+    switch (status) {
+      case 'approved': return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300';
+      case 'modified': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300';
+      case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
+    }
+  }, []);
+
+  const hasValidFlightRequests = flightRequests.every(f => 
+    f.flightNumber.trim() !== '' && f.aircraft.type.trim() !== ''
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-all duration-700">
+      <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              Tivat Airport (TIV) Scheduling Assistant
+            </span>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Airport Slot & Ramp Allocation
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Optimize flight schedules considering slot restrictions and ramp capacity at Tivat Airport
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          {/* Flight Requests Input */}
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Flight Requests</h3>
+                <button
+                  onClick={addFlightRequest}
+                  className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+                  type="button"
+                >
+                  + Add Flight
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {flightRequests.map((request, index) => (
+                  <div key={index} className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <h4 className="font-medium text-gray-900 dark:text-white mb-3">Flight {index + 1}</h4>
+                    
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Flight Number</label>
+                        <input
+                          type="text"
+                          value={request.flightNumber}
+                          onChange={(e) => updateFlightRequest(index, 'flightNumber', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                          placeholder="RYR123"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Origin</label>
+                        <input
+                          type="text"
+                          value={request.origin}
+                          onChange={(e) => updateFlightRequest(index, 'origin', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                          placeholder="LGW"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={request.requestedDate}
+                          onChange={(e) => updateFlightRequest(index, 'requestedDate', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={request.requestedTime}
+                          onChange={(e) => updateFlightRequest(index, 'requestedTime', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Aircraft Type</label>
+                      <select
+                        value={request.aircraft.type}
+                        onChange={(e) => updateAircraft(index, 'type', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option value="">Select aircraft</option>
+                        <option value="A319">A319</option>
+                        <option value="A320">A320</option>
+                        <option value="A321">A321 (Large)</option>
+                        <option value="B737-700">B737-700</option>
+                        <option value="B737-800">B737-800</option>
+                        <option value="B737-900">B737-900 (Large)</option>
+                        <option value="ATR 72">ATR 72</option>
+                        <option value="Embraer 195">Embraer 195</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Airline</label>
+                        <input
+                          type="text"
+                          value={request.aircraft.airline}
+                          onChange={(e) => updateAircraft(index, 'airline', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                          placeholder="Ryanair"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Passengers</label>
+                        <input
+                          type="number"
+                          value={request.passengers}
+                          onChange={(e) => updateFlightRequest(index, 'passengers', parseInt(e.target.value) || 0)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                          placeholder="180"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={generateSchedule}
+                disabled={isLoading || !hasValidFlightRequests}
+                className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 px-4 rounded-md transition-colors"
+                type="button"
+              >
+                {isLoading ? 'Generating Schedule...' : 'Generate Optimal Schedule'}
+              </button>
+            </div>
+
+            {/* Constraints Info */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+              <h4 className="font-semibold text-yellow-900 dark:text-yellow-200 mb-2">Tivat Airport Constraints</h4>
+              <ul className="text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
+                <li>• 7 total parking positions available</li>
+                <li>• Only 2 positions for large aircraft (A321/B737-900)</li>
+                <li>• Daylight operations only (sunrise to sunset)</li>
+                <li>• Slot-coordinated airport (IATA Level 3)</li>
+                <li>• Follows IATA Worldwide Scheduling Guidelines</li>
+              </ul>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4">
+                <p className="text-red-800 dark:text-red-200 text-sm">{error}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Results Section */}
+          <div className="space-y-6">
+            {recommendation ? (
+              <>
+                {/* Slot Allocations */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Slot Allocations</h3>
+                  <div className="space-y-3">
+                    {recommendation.slots.map((slot, index) => (
+                      <div key={index} className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-medium text-gray-900 dark:text-white">{slot.flightNumber}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(slot.slotStatus)}`}>
+                            {slot.slotStatus.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                          <span className="text-gray-600 dark:text-gray-400">Time: {slot.allocatedTime}</span>
+                          <span className="text-gray-600 dark:text-gray-400">Ref: {slot.slotReference}</span>
+                        </div>
+                        {slot.constraints.length > 0 && (
+                          <p className="text-xs text-orange-600 dark:text-orange-400">
+                            Constraints: {slot.constraints.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Ramp Allocations */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Ramp Assignments</h3>
+                  <div className="space-y-3">
+                    {recommendation.ramp.map((ramp, index) => (
+                      <div key={index} className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-medium text-gray-900 dark:text-white">Position {ramp.position}</span>
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                            {ramp.positionType.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                          <span className="text-gray-600 dark:text-gray-400">{ramp.aircraftType} ({ramp.registration})</span>
+                          <span className="text-gray-600 dark:text-gray-400">{ramp.airline}</span>
+                          <span className="text-gray-600 dark:text-gray-400">Park: {ramp.parkingTime}</span>
+                          <span className="text-gray-600 dark:text-gray-400">Depart: {ramp.departureTime}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Utilization & Recommendations */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Analysis & Recommendations</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{recommendation.utilization.rampUtilization}%</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Ramp Utilization</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">{recommendation.utilization.slotUtilization}%</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Slot Utilization</div>
+                    </div>
+                  </div>
+
+                  {recommendation.warnings.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="font-medium text-red-600 dark:text-red-400 mb-2">Warnings</h4>
+                      <ul className="text-sm text-red-600 dark:text-red-400 space-y-1">
+                        {recommendation.warnings.map((warning, index) => (
+                          <li key={index}>• {warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div>
+                    <h4 className="font-medium text-green-600 dark:text-green-400 mb-2">Recommendations</h4>
+                    <ul className="text-sm text-green-600 dark:text-green-400 space-y-1">
+                      {recommendation.recommendations.map((rec, index) => (
+                        <li key={index}>• {rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Placeholder */
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+                <div className="text-gray-400 dark:text-gray-500 mb-4">
+                  <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Schedule Optimization Ready
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  Add flight requests and generate optimal slot allocations and ramp assignments
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

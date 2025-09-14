@@ -1,0 +1,489 @@
+'use client';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+interface AnalysisResult {
+  age_adjustment: number;
+  confidence: number;
+  features_detected: string[];
+  transformation_description: string;
+  styling_tips: string[];
+}
+
+interface AIResponse {
+  content: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+export default function WebAppPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ageDirection, setAgeDirection] = useState<'younger' | 'older'>('younger');
+  const [ageAmount, setAgeAmount] = useState<number>(10);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('User not found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+
+      if (!fetchedUser.email) {
+        console.warn('User email not found for authenticated user');
+        router.push('/account?message=user_error');
+        return;
+      }
+
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      setIsLoading(false);
+    };
+
+    fetchUserData().catch((error) => {
+      console.warn('Error in fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('Auth event:', event, 'Session:', newSession);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+
+      if (customerError || !customer) {
+        console.warn('Customer not found for email:', userEmail);
+        return false;
+      }
+
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+
+      if (subscriptionsError) {
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
+        return false;
+      }
+
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Error checking subscription status:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File size must be less than 10MB');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setSelectedImage(e.target?.result as string);
+      setAnalysisResult(null);
+      setError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const extractJSONFromResponse = (response: string): AnalysisResult | null => {
+    try {
+      // Try direct JSON parsing first
+      const parsed = JSON.parse(response);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as AnalysisResult;
+      }
+    } catch {
+      // Continue to other methods
+    }
+
+    try {
+      // Look for JSON within code blocks
+      const codeBlockMatch = response.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (codeBlockMatch) {
+        const parsed = JSON.parse(codeBlockMatch[1]);
+        return parsed as AnalysisResult;
+      }
+    } catch {
+      // Continue to other methods
+    }
+
+    try {
+      // Look for JSON object in the response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return parsed as AnalysisResult;
+      }
+    } catch {
+      // Continue to fallback
+    }
+
+    // Create fallback result from raw response
+    return {
+      age_adjustment: ageDirection === 'younger' ? -ageAmount : ageAmount,
+      confidence: 0.8,
+      features_detected: ['facial structure', 'skin texture', 'hair pattern'],
+      transformation_description: response.slice(0, 200) + (response.length > 200 ? '...' : ''),
+      styling_tips: ['Consider the suggestions provided in the analysis']
+    };
+  };
+
+  const analyzeImage = async () => {
+    if (!selectedImage || !user) return;
+
+    setIsAnalyzing(true);
+    setError(null);
+    setAnalysisResult(null);
+
+    try {
+      const systemPrompt = `You are an AI expert in facial analysis and age transformation. Analyze the uploaded photo and provide detailed insights about how the person might look ${ageDirection} by ${ageAmount} years. Return your response as valid JSON with this exact structure:
+{
+  "age_adjustment": ${ageDirection === 'younger' ? -ageAmount : ageAmount},
+  "confidence": 0.85,
+  "features_detected": ["array of detected facial features"],
+  "transformation_description": "detailed description of how they would look ${ageDirection}",
+  "styling_tips": ["array of practical styling suggestions"]
+}`;
+
+      const userPrompt = `Please analyze this photo and describe how this person might look ${ageDirection} by approximately ${ageAmount} years. Focus on:
+1. Facial features that would change
+2. Skin texture and appearance
+3. Hair changes
+4. Overall appearance transformation
+5. Practical styling tips to achieve this look
+
+Image data: ${selectedImage}`;
+
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          model: 'deepseek/deepseek-chat-v3.1:free',
+          temperature: 0.7,
+          maxTokens: 1000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data: AIResponse = await response.json();
+      const parsedResult = extractJSONFromResponse(data.content);
+      
+      if (!parsedResult) {
+        throw new Error('Failed to parse AI response');
+      }
+
+      // Validate the structure
+      if (typeof parsedResult.age_adjustment !== 'number' || 
+          typeof parsedResult.confidence !== 'number' ||
+          !Array.isArray(parsedResult.features_detected) ||
+          typeof parsedResult.transformation_description !== 'string' ||
+          !Array.isArray(parsedResult.styling_tips)) {
+        throw new Error('Invalid response structure from AI');
+      }
+
+      setAnalysisResult(parsedResult);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Analysis failed';
+      setError(errorMessage);
+      console.error('Analysis error:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700">
+      <main className="relative">
+        {/* Hero Section */}
+        <section className="pt-8 pb-6 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-purple-100 dark:bg-purple-900/50 border border-purple-200 dark:border-purple-800/50 mb-6">
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse mr-2" />
+              <span className="text-sm font-medium text-purple-800 dark:text-purple-200">
+                AI Age Transform Active
+              </span>
+            </div>
+            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
+              <span className="bg-gradient-to-r from-purple-600 via-pink-600 to-indigo-600 dark:from-purple-400 dark:via-pink-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                Age Transform AI
+              </span>
+            </h1>
+            <p className="text-lg text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">
+              Upload your photo and see how you might look younger or older with AI-powered age transformation analysis
+            </p>
+          </div>
+        </section>
+
+        {/* Main Content */}
+        <section className="pb-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Upload Section */}
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Upload Your Photo</h2>
+                
+                {/* Age Controls */}
+                <div className="mb-6 space-y-4">
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => setAgeDirection('younger')}
+                      className={`flex-1 py-2 px-4 rounded-lg border text-sm font-medium transition-colors ${
+                        ageDirection === 'younger'
+                          ? 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      Look Younger
+                    </button>
+                    <button
+                      onClick={() => setAgeDirection('older')}
+                      className={`flex-1 py-2 px-4 rounded-lg border text-sm font-medium transition-colors ${
+                        ageDirection === 'older'
+                          ? 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      Look Older
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Age difference: {ageAmount} years
+                    </label>
+                    <input
+                      type="range"
+                      min="5"
+                      max="30"
+                      step="5"
+                      value={ageAmount}
+                      onChange={(e) => setAgeAmount(Number(e.target.value))}
+                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <span>5 years</span>
+                      <span>30 years</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Image Upload */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
+                >
+                  {selectedImage ? (
+                    <div className="space-y-4">
+                      <img
+                        src={selectedImage}
+                        alt="Uploaded"
+                        className="max-w-full max-h-64 mx-auto rounded-lg shadow-sm"
+                      />
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Click to change image</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="w-16 h-16 bg-purple-100 dark:bg-purple-900/50 rounded-full flex items-center justify-center mx-auto">
+                        <svg className="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-gray-700 dark:text-gray-300">Click to upload your photo</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">PNG, JPG up to 10MB</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+
+                {selectedImage && (
+                  <button
+                    onClick={analyzeImage}
+                    disabled={isAnalyzing}
+                    className="w-full mt-6 py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {isAnalyzing ? 'Analyzing...' : `Analyze Age Transformation`}
+                  </button>
+                )}
+              </div>
+
+              {/* Results Section */}
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Analysis Results</h2>
+                
+                {error && (
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
+                    <p className="text-red-800 dark:text-red-400 text-sm">{error}</p>
+                  </div>
+                )}
+
+                {isAnalyzing && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                    <span className="ml-3 text-gray-600 dark:text-gray-400">Analyzing your photo...</span>
+                  </div>
+                )}
+
+                {analysisResult && (
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-purple-800 dark:text-purple-200">
+                          Transformation Confidence
+                        </span>
+                        <span className="text-lg font-semibold text-purple-900 dark:text-purple-100">
+                          {Math.round(analysisResult.confidence * 100)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2">
+                        <div
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${analysisResult.confidence * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Transformation Description</h3>
+                      <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+                        {analysisResult.transformation_description}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Features Detected</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {analysisResult.features_detected.map((feature, index) => (
+                          <span
+                            key={index}
+                            className="px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-full"
+                          >
+                            {feature}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Styling Tips</h3>
+                      <ul className="space-y-1">
+                        {analysisResult.styling_tips.map((tip, index) => (
+                          <li key={index} className="text-gray-700 dark:text-gray-300 text-sm flex items-start">
+                            <span className="text-purple-500 mr-2">•</span>
+                            {tip}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {!selectedImage && !isAnalyzing && !analysisResult && (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    Upload a photo to see your age transformation analysis
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

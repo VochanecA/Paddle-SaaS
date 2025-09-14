@@ -1,0 +1,431 @@
+// src/app/web-app/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Loader2, FileText, Plane, CheckCircle, Copy } from 'lucide-react';
+
+interface AirportProcedure {
+  policyAndObjectives: string;
+  organizationStructure: string;
+  responsibilities: string;
+  processesAndProcedures: string;
+  interfaces: string;
+  controlProcedures: string;
+  training: string;
+  crossReferences: string;
+  assistance: string;
+}
+
+interface SubscriptionStatus {
+  hasActiveSubscription: boolean;
+  isLoading: boolean;
+}
+
+const WebApp = () => {
+  const [airportName, setAirportName] = useState('');
+  const [procedureType, setProcedureType] = useState('');
+  const [regulationReference, setRegulationReference] = useState('EASA');
+  const [procedure, setProcedure] = useState<AirportProcedure | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>({
+    hasActiveSubscription: false,
+    isLoading: true,
+  });
+  
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Check subscription status
+  useEffect(() => {
+    const checkSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('customer_id')
+          .eq('email', user.email)
+          .single();
+
+        if (!customer) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: subscriptions } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('customer_id', customer.customer_id);
+
+        const hasActiveSubscription = subscriptions?.some(
+          sub => sub.subscription_status === 'active' || sub.subscription_status === 'trialing'
+        ) || false;
+
+        setSubscriptionStatus({
+          hasActiveSubscription,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error('Error checking subscription:', err);
+        setSubscriptionStatus({
+          hasActiveSubscription: false,
+          isLoading: false,
+        });
+      }
+    };
+
+    checkSubscription();
+  }, [supabase]);
+
+  const generateProcedure = async () => {
+    if (!airportName.trim() || !procedureType.trim()) {
+      setError('Please enter both airport name and procedure type');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert in aviation safety management systems. Generate a comprehensive airport procedure document based on ${regulationReference} requirements. 
+              The document must cover all 9 required aspects:
+              1. Policy and objectives
+              2. Organisation structure
+              3. Responsibilities and associated authority
+              4. Processes and procedures
+              5. Internal and external interfaces
+              6. Internal control procedures
+              7. Training of personnel
+              8. Cross references to associated documents
+              9. Assistance from other competent authorities or the Agency (where required)
+              
+              Return the response in JSON format with the following structure:
+              {
+                "policyAndObjectives": "Detailed content for section 1",
+                "organizationStructure": "Detailed content for section 2",
+                "responsibilities": "Detailed content for section 3",
+                "processesAndProcedures": "Detailed content for section 4",
+                "interfaces": "Detailed content for section 5",
+                "controlProcedures": "Detailed content for section 6",
+                "training": "Detailed content for section 7",
+                "crossReferences": "Detailed content for section 8",
+                "assistance": "Detailed content for section 9"
+              }
+              
+              Do not use placeholder text like "To be completed". Provide specific, detailed content for each section that is directly applicable to ${airportName} and focuses on ${procedureType} procedures. Include specific examples, responsibilities, and implementation steps.`,
+            },
+            {
+              role: 'user',
+              content: `Generate a comprehensive airport procedure document for ${airportName} focusing on ${procedureType} procedures according to ${regulationReference} requirements.`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      try {
+        const procedureResult: AirportProcedure = JSON.parse(data.content);
+        setProcedure(procedureResult);
+      } catch (parseError) {
+        // If the response isn't valid JSON, try to extract content from the text
+        const content = data.content;
+        
+        // Try to extract sections from the text using regex
+        const extractSection = (text: string, sectionNumber: number): string => {
+          const regex = new RegExp(`${sectionNumber}\\.\\s*[^\\n]*([\\s\\S]*?)(?=\\d+\\.|$)`, 'i');
+          const match = text.match(regex);
+          return match ? match[1].trim() : `Content for section ${sectionNumber} not found in the generated text.`;
+        };
+        
+        setProcedure({
+          policyAndObjectives: extractSection(content, 1),
+          organizationStructure: extractSection(content, 2),
+          responsibilities: extractSection(content, 3),
+          processesAndProcedures: extractSection(content, 4),
+          interfaces: extractSection(content, 5),
+          controlProcedures: extractSection(content, 6),
+          training: extractSection(content, 7),
+          crossReferences: extractSection(content, 8),
+          assistance: extractSection(content, 9),
+        });
+      }
+    } catch (err) {
+      console.error('Error generating procedure:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate procedure');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (subscriptionStatus.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!subscriptionStatus.hasActiveSubscription) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-md w-full">
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-center mb-2">Subscription Required</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
+              You need an active subscription to access the AI-powered procedure generator.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => router.push('/pricing')}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
+              >
+                View Pricing Plans
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">
+            Airport Procedure Generator
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Generate EASA-compliant airport procedure documents with AI. Create comprehensive safety management procedures in minutes.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Procedure Details</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="airport" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Airport Name *
+              </label>
+              <input
+                id="airport"
+                type="text"
+                value={airportName}
+                onChange={(e) => setAirportName(e.target.value)}
+                placeholder="e.g., London Heathrow Airport"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="procedure" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Procedure Type *
+              </label>
+              <input
+                id="procedure"
+                type="text"
+                value={procedureType}
+                onChange={(e) => setProcedureType(e.target.value)}
+                placeholder="e.g., Emergency Response, Safety Management, Winter Operations"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="regulation" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Regulation Reference
+              </label>
+              <select
+                id="regulation"
+                value={regulationReference}
+                onChange={(e) => setRegulationReference(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="EASA">EASA</option>
+                <option value="FAA">FAA</option>
+                <option value="ICAO">ICAO</option>
+                <option value="EASA & FAA">EASA & FAA</option>
+              </select>
+            </div>
+            
+            <button
+              onClick={generateProcedure}
+              disabled={isGenerating || !airportName.trim() || !procedureType.trim()}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Procedure...
+                </>
+              ) : (
+                'Generate Procedure Document'
+              )}
+            </button>
+          </div>
+        </div>
+
+        {procedure && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold mb-2">
+                  {airportName} - {procedureType} Procedure
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  {regulationReference} Compliant Document
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  const fullDocument = `${airportName} - ${procedureType} Procedure
+${regulationReference} Compliant Document
+
+1. Policy and Objectives
+${procedure.policyAndObjectives}
+
+2. Organisation Structure
+${procedure.organizationStructure}
+
+3. Responsibilities and Associated Authority
+${procedure.responsibilities}
+
+4. Processes and Procedures
+${procedure.processesAndProcedures}
+
+5. Internal and External Interfaces
+${procedure.interfaces}
+
+6. Internal Control Procedures
+${procedure.controlProcedures}
+
+7. Training of Personnel
+${procedure.training}
+
+8. Cross References to Associated Documents
+${procedure.crossReferences}
+
+9. Assistance from Other Competent Authorities or the Agency
+${procedure.assistance}`;
+                  copyToClipboard(fullDocument);
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                title="Copy full document"
+              >
+                {copied ? <CheckCircle className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">1. Policy and Objectives</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.policyAndObjectives}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">2. Organisation Structure</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.organizationStructure}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">3. Responsibilities and Associated Authority</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.responsibilities}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">4. Processes and Procedures</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.processesAndProcedures}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">5. Internal and External Interfaces</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.interfaces}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">6. Internal Control Procedures</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.controlProcedures}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">7. Training of Personnel</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.training}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">8. Cross References to Associated Documents</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.crossReferences}
+                </p>
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-semibold mb-2">9. Assistance from Other Competent Authorities or the Agency</h3>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+                  {procedure.assistance}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default WebApp;

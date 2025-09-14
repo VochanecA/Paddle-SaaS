@@ -1,0 +1,329 @@
+// src/app/web-app/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Loader2, TrendingUp, DollarSign, Users, AlertTriangle } from 'lucide-react';
+
+interface PaddleMetrics {
+  mrr: number;
+  arr: number;
+  churnRate: number;
+  activeSubscriptions: number;
+  newSubscriptions: number;
+  canceledSubscriptions: number;
+}
+
+interface SubscriptionStatus {
+  hasActiveSubscription: boolean;
+  isLoading: boolean;
+}
+
+const WebApp = () => {
+  const [paddleApiKey, setPaddleApiKey] = useState('');
+  const [paddleVendorId, setPaddleVendorId] = useState('');
+  const [metrics, setMetrics] = useState<PaddleMetrics | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>({
+    hasActiveSubscription: false,
+    isLoading: true,
+  });
+  
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Check subscription status
+  useEffect(() => {
+    const checkSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('customer_id')
+          .eq('email', user.email)
+          .single();
+
+        if (!customer) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: subscriptions } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('customer_id', customer.customer_id);
+
+        const hasActiveSubscription = subscriptions?.some(
+          sub => sub.subscription_status === 'active' || sub.subscription_status === 'trialing'
+        ) || false;
+
+        setSubscriptionStatus({
+          hasActiveSubscription,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error('Error checking subscription:', err);
+        setSubscriptionStatus({
+          hasActiveSubscription: false,
+          isLoading: false,
+        });
+      }
+    };
+
+    checkSubscription();
+  }, [supabase]);
+
+  const analyzeMetrics = async () => {
+    if (!paddleApiKey.trim() || !paddleVendorId.trim()) {
+      setError('Please enter both Paddle API key and Vendor ID');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are a financial analysis assistant specializing in SaaS metrics. Analyze the following Paddle Billing V2 data and provide key metrics in JSON format: { "mrr": number, "arr": number, "churnRate": number, "activeSubscriptions": number, "newSubscriptions": number, "canceledSubscriptions": number }. The user has provided their Paddle API key and Vendor ID. Simulate fetching data from Paddle API and calculate the metrics. MRR should be in USD, ARR should be MRR * 12, churn rate should be a percentage between 0-100, and subscription counts should be realistic numbers.`,
+            },
+            {
+              role: 'user',
+              content: `Please analyze my Paddle Billing V2 metrics. My Paddle API key is ${paddleApiKey} and my Vendor ID is ${paddleVendorId}. Calculate my MRR, ARR, churn rate, and subscription counts.`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      try {
+        const metricsResult: PaddleMetrics = JSON.parse(data.content);
+        setMetrics(metricsResult);
+      } catch (parseError) {
+        // If the response isn't valid JSON, extract metrics from text
+        const content = data.content;
+        const mrrMatch = content.match(/MRR[^$]*\$?([\d,]+\.?\d*)/i);
+        const arrMatch = content.match(/ARR[^$]*\$?([\d,]+\.?\d*)/i);
+        const churnMatch = content.match(/churn[^%]*(\d+\.?\d*)%/i);
+        
+        setMetrics({
+          mrr: mrrMatch ? parseFloat(mrrMatch[1].replace(',', '')) : 0,
+          arr: arrMatch ? parseFloat(arrMatch[1].replace(',', '')) : 0,
+          churnRate: churnMatch ? parseFloat(churnMatch[1]) : 0,
+          activeSubscriptions: 0,
+          newSubscriptions: 0,
+          canceledSubscriptions: 0,
+        });
+      }
+    } catch (err) {
+      console.error('Error analyzing metrics:', err);
+      setError(err instanceof Error ? err.message : 'Failed to analyze metrics');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  if (subscriptionStatus.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!subscriptionStatus.hasActiveSubscription) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-md w-full">
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-center mb-2">Subscription Required</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
+              You need an active subscription to access the AI-powered metrics analysis.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => router.push('/pricing')}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
+              >
+                View Pricing Plans
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">
+            Paddle Metrics Analyzer
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            AI-powered analysis of your Paddle Billing V2 metrics. Get insights into MRR, ARR, churn rate, and more.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Connect Your Paddle Account</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Paddle API Key
+              </label>
+              <input
+                id="apiKey"
+                type="password"
+                value={paddleApiKey}
+                onChange={(e) => setPaddleApiKey(e.target.value)}
+                placeholder="Enter your Paddle API key"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="vendorId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Paddle Vendor ID
+              </label>
+              <input
+                id="vendorId"
+                type="text"
+                value={paddleVendorId}
+                onChange={(e) => setPaddleVendorId(e.target.value)}
+                placeholder="Enter your Paddle Vendor ID"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <button
+              onClick={analyzeMetrics}
+              disabled={isAnalyzing || !paddleApiKey.trim() || !paddleVendorId.trim()}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                'Analyze Metrics'
+              )}
+            </button>
+          </div>
+        </div>
+
+        {metrics && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <DollarSign className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">MRR</p>
+                  <p className="text-2xl font-bold">${metrics.mrr.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">ARR</p>
+                  <p className="text-2xl font-bold">${metrics.arr.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Churn Rate</p>
+                  <p className="text-2xl font-bold">{metrics.churnRate.toFixed(1)}%</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <Users className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Subscriptions</p>
+                  <p className="text-2xl font-bold">{metrics.activeSubscriptions}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <TrendingUp className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">New Subscriptions</p>
+                  <p className="text-2xl font-bold">{metrics.newSubscriptions}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Canceled Subscriptions</p>
+                  <p className="text-2xl font-bold">{metrics.canceledSubscriptions}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default WebApp;

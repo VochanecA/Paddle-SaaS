@@ -1,0 +1,746 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+// Types
+interface PortfolioInput {
+  [symbol: string]: number;
+}
+
+interface AnalysisResult {
+  recommendations: string[];
+  riskScore: number;
+  diversification: string;
+}
+
+interface CryptoPrice {
+  symbol: string;
+  price: number;
+}
+
+// Utility: Safe JSON extraction from AI responses
+function extractJSONFromResponse(raw: string): AnalysisResult | null {
+  try {
+    // Try direct parse
+    return JSON.parse(raw) as AnalysisResult;
+  } catch {
+    try {
+      // Try regex to extract JSON inside text
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        return JSON.parse(match[0]) as AnalysisResult;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export default function CryptoPortfolioAnalyzer() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [portfolio, setPortfolio] = useState<string>('BTC:0.5, ETH:2, SOL:10');
+  const [prices, setPrices] = useState<CryptoPrice[]>([]);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const router = useRouter();
+
+  // --- Auth check ---
+  useEffect(() => {
+    const supabase = createClient();
+    const fetchUser = async () => {
+      setIsLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        router.push('/auth/login');
+        return;
+      }
+      setUser(session.user);
+      setIsLoading(false);
+    };
+    fetchUser().catch(() => router.push('/auth/login'));
+  }, [router]);
+
+  // --- Fetch crypto prices ---
+  useEffect(() => {
+    let active = true;
+    async function fetchPrices() {
+      try {
+        const res = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd'
+        );
+        const data = await res.json();
+        if (!active) return;
+        setPrices([
+          { symbol: 'BTC', price: data.bitcoin.usd },
+          { symbol: 'ETH', price: data.ethereum.usd },
+          { symbol: 'SOL', price: data.solana.usd },
+        ]);
+      } catch (e) {
+        console.error('Price fetch failed', e);
+      }
+    }
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 15000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // --- Draw chart ---
+// --- Draw chart ---
+useEffect(() => {
+  if (!canvasRef.current || prices.length === 0) return;
+  const canvas = canvasRef.current;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  let frame: number;
+  let animProgress = 0;
+  const duration = 30; // animation frames
+  const startHeights = prices.map(() => 0);
+  const targetHeights = prices.map((p) => p.price);
+
+  const render = () => {
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Background
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(0, 0, w, h);
+
+    // Axis
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(50, 10);
+    ctx.lineTo(50, h - 30);
+    ctx.lineTo(w - 10, h - 30);
+    ctx.stroke();
+
+    const maxPrice = Math.max(...targetHeights) * 1.2;
+    const barWidth = (w - 100) / prices.length;
+
+    prices.forEach((p, i) => {
+      const progress = Math.min(animProgress / duration, 1);
+      const currentPrice = startHeights[i] + (targetHeights[i] - startHeights[i]) * progress;
+      const barHeight = (currentPrice / maxPrice) * (h - 60);
+
+      const x = 60 + i * barWidth;
+      const y = h - 30 - barHeight;
+
+      // Gradient
+      const gradient = ctx.createLinearGradient(x, y, x, h - 30);
+      gradient.addColorStop(0, '#6366f1'); // indigo
+      gradient.addColorStop(1, '#3b82f6'); // blue
+      ctx.fillStyle = gradient;
+
+      // Bar
+      ctx.fillRect(x + 10, y, barWidth - 20, barHeight);
+
+      // Labels
+      ctx.fillStyle = '#111827';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.symbol, x + barWidth / 2, h - 12);
+      ctx.fillText(`$${p.price.toFixed(0)}`, x + barWidth / 2, y - 6);
+    });
+
+    if (animProgress < duration) {
+      animProgress++;
+    }
+    frame = requestAnimationFrame(render);
+  };
+
+  render();
+  return () => cancelAnimationFrame(frame);
+}, [prices]);
+
+
+  // --- Handle AI Analysis ---
+  async function analyzePortfolio() {
+    setError(null);
+    setAnalysis(null);
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content:
+            'You are a crypto portfolio analyzer. Always return valid JSON with keys: recommendations (string[]), riskScore (number 0-100), diversification (string).',
+        },
+        { role: 'user', content: `Analyze this portfolio: ${portfolio}` },
+      ];
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const parsed = extractJSONFromResponse(data.content);
+      if (!parsed || !parsed.recommendations || typeof parsed.riskScore !== 'number') {
+        throw new Error('Invalid AI response format');
+      }
+      setAnalysis(parsed);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-950">
+        <div className="text-xl text-gray-700 dark:text-gray-200">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all">
+      <main className="max-w-4xl mx-auto p-6">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">
+          Crypto Portfolio Analyzer
+        </h1>
+
+        {/* Input */}
+        <div className="mb-6">
+          <label className="block mb-2 text-gray-700 dark:text-gray-300 font-medium">
+            Enter Portfolio (e.g. BTC:0.5, ETH:2)
+          </label>
+          <textarea
+            value={portfolio}
+            onChange={(e) => setPortfolio(e.target.value)}
+            className="w-full p-3 rounded-xl border dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+          />
+        </div>
+        <button
+          onClick={analyzePortfolio}
+          className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold shadow hover:opacity-90 transition"
+        >
+          Analyze with AI
+        </button>
+
+        {/* Chart */}
+        <div className="mt-10">
+          <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Live Prices</h2>
+          <canvas ref={canvasRef} width={600} height={300} className="w-full border rounded-xl bg-white dark:bg-gray-900" />
+        </div>
+
+        {/* Results */}
+        <div className="mt-10">
+          {error && (
+            <div className="p-4 bg-red-100 text-red-700 rounded-xl mb-4">
+              Error: {error}
+            </div>
+          )}
+          {analysis && (
+            <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-xl border dark:border-gray-700">
+              <h2 className="text-xl font-bold mb-2">AI Analysis</h2>
+              <p className="mb-2"><strong>Risk Score:</strong> {analysis.riskScore}/100</p>
+              <p className="mb-2"><strong>Diversification:</strong> {analysis.diversification}</p>
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {analysis.recommendations.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+
+i druga ima gresaka:
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
+import AIChat from '@/components/AIChat';
+import type { User, Session } from '@supabase/supabase-js';
+
+// Types for our crypto data
+interface CryptoData {
+  id: string;
+  symbol: string;
+  name: string;
+  image: string;
+  current_price: number;
+  price_change_percentage_24h: number;
+  market_cap: number;
+}
+
+interface PortfolioItem {
+  id: string;
+  symbol: string;
+  amount: number;
+  purchasePrice: number;
+}
+
+interface PortfolioValue {
+  timestamp: number;
+  value: number;
+}
+
+// Sample portfolio for demonstration
+const samplePortfolio: PortfolioItem[] = [
+  { id: 'bitcoin', symbol: 'BTC', amount: 0.5, purchasePrice: 40000 },
+  { id: 'ethereum', symbol: 'ETH', amount: 5, purchasePrice: 2500 },
+  { id: 'cardano', symbol: 'ADA', amount: 1000, purchasePrice: 1.2 },
+];
+
+export default function CryptoPortfolioAnalyzer() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [cryptoData, setCryptoData] = useState<CryptoData[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>(samplePortfolio);
+  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioValue[]>([]);
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'1h' | '24h' | '7d'>('24h');
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const router = useRouter();
+
+  // Fetch crypto data
+  const fetchCryptoData = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // In a real app, you would use a dedicated API endpoint
+      // This is a simplified example using CoinGecko's API
+      const response = await fetch(
+        'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h'
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch crypto data');
+      }
+      
+      const data: CryptoData[] = await response.json();
+      setCryptoData(data);
+      
+      // Update portfolio history
+      const currentValue = calculatePortfolioValue(data);
+      setPortfolioHistory(prev => [
+        ...prev.slice(-23), // Keep only last 24 values (1 day if hourly)
+        { timestamp: Date.now(), value: currentValue }
+      ]);
+    } catch (error) {
+      console.error('Error fetching crypto data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Calculate current portfolio value
+  const calculatePortfolioValue = useCallback((data: CryptoData[]) => {
+    return portfolio.reduce((total, asset) => {
+      const currentAsset = data.find(crypto => crypto.id === asset.id);
+      if (currentAsset) {
+        return total + (currentAsset.current_price * asset.amount);
+      }
+      return total;
+    }, 0);
+  }, [portfolio]);
+
+  // Calculate portfolio performance
+  const calculatePerformance = useCallback(() => {
+    const initialValue = portfolio.reduce((total, asset) => {
+      return total + (asset.purchasePrice * asset.amount);
+    }, 0);
+    
+    const currentValue = calculatePortfolioValue(cryptoData);
+    const profitLoss = currentValue - initialValue;
+    const profitLossPercentage = initialValue > 0 ? (profitLoss / initialValue) * 100 : 0;
+    
+    return {
+      initialValue,
+      currentValue,
+      profitLoss,
+      profitLossPercentage
+    };
+  }, [portfolio, cryptoData, calculatePortfolioValue]);
+
+  // Initialize component
+  useEffect(() => {
+    // Always scroll to top when this page loads
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      
+      // Check session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+      
+      // Fetch user data
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('User not found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+      
+      if (!fetchedUser.email) {
+        console.warn('User email not found for authenticated user');
+        router.push('/account?message=user_error');
+        return;
+      }
+      
+      // Check subscription status
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      
+      // Fetch initial crypto data
+      await fetchCryptoData();
+      
+      setIsLoading(false);
+    };
+    
+    fetchUserData().catch((error) => {
+      console.warn('Error in fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+    
+    // Set up interval to fetch crypto data periodically
+    const intervalId = setInterval(fetchCryptoData, 300000); // Update every 5 minutes
+    
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('Auth event:', event, 'Session:', newSession);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+    
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(intervalId);
+    };
+  }, [router, fetchCryptoData]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      
+      if (customerError || !customer) {
+        console.warn('Customer not found for email:', userEmail);
+        return false;
+      }
+      
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      
+      if (subscriptionsError) {
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
+        return false;
+      }
+      
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Error checking subscription status:', (error as Error).message);
+      return false;
+    }
+  }
+
+  // Render loading state
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Loading...</div>
+      </div>
+    );
+  }
+
+  // Calculate performance metrics
+  const performance = calculatePerformance();
+
+  // Simple chart rendering function
+  const renderChart = () => {
+    if (portfolioHistory.length < 2) {
+      return (
+        <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+          Not enough data to display chart
+        </div>
+      );
+    }
+    
+    const values = portfolioHistory.map(item => item.value);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const valueRange = maxValue - minValue || 1; // Avoid division by zero
+    
+    return (
+      <div className="h-64 w-full relative">
+        <div className="absolute inset-0 flex items-center">
+          {/* Chart grid lines */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+        
+        <div className="relative h-full flex items-end">
+          {portfolioHistory.map((point, index) => {
+            const heightPercentage = ((point.value - minValue) / valueRange) * 90 + 5; // 5-95% height
+            const isLastPoint = index === portfolioHistory.length - 1;
+            
+            return (
+              <div
+                key={index}
+                className="flex-1 flex flex-col items-center justify-end mx-0.5"
+                style={{ height: '100%' }}
+              >
+                <div
+                  className="w-full bg-gradient-to-t from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-t transition-all duration-300"
+                  style={{ height: `${heightPercentage}%` }}
+                ></div>
+                
+                {isLastPoint && (
+                  <div className="absolute top-0 mt-1 text-xs font-medium text-blue-600 dark:text-blue-400">
+                    ${point.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700">
+      <main className="relative">
+        {/* Header Section */}
+        <section className="pt-8 pb-4 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  Real-time Crypto Portfolio
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
+                Crypto Portfolio{' '}
+                <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 dark:from-blue-400 dark:via-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                  Analyzer
+                </span>
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                Track your cryptocurrency investments in real-time with advanced analytics and AI-powered insights.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Portfolio Summary Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Portfolio Overview</h2>
+                <button
+                  onClick={fetchCryptoData}
+                  disabled={isRefreshing}
+                  className="flex items-center px-4 py-2 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-800/50 transition-colors disabled:opacity-50"
+                >
+                  {isRefreshing ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-700 dark:text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                      Refresh Data
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Current Value</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    ${performance.currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total P&L</p>
+                  <p className={`text-2xl font-bold ${performance.profitLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {performance.profitLoss >= 0 ? '+' : ''}${performance.profitLoss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">24h Change</p>
+                  <p className={`text-2xl font-bold ${performance.profitLossPercentage >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {performance.profitLossPercentage >= 0 ? '+' : ''}{performance.profitLossPercentage.toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+
+              {/* Chart Section */}
+              <div className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">Portfolio Value</h3>
+                  <div className="flex space-x-2">
+                    {(['1h', '24h', '7d'] as const).map((timeframe) => (
+                      <button
+                        key={timeframe}
+                        onClick={() => setSelectedTimeframe(timeframe)}
+                        className={`px-3 py-1 text-sm rounded-lg ${
+                          selectedTimeframe === timeframe
+                            ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {timeframe}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {renderChart()}
+              </div>
+
+              {/* Asset List */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Your Assets</h3>
+                <div className="space-y-3">
+                  {portfolio.map((asset) => {
+                    const crypto = cryptoData.find(c => c.id === asset.id);
+                    if (!crypto) return null;
+                    
+                    const currentValue = crypto.current_price * asset.amount;
+                    const profitLoss = currentValue - (asset.purchasePrice * asset.amount);
+                    const profitLossPercentage = (profitLoss / (asset.purchasePrice * asset.amount)) * 100;
+                    
+                    return (
+                      <div key={asset.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div className="flex items-center">
+                          <img src={crypto.image} alt={crypto.name} className="w-8 h-8 mr-3 rounded-full" />
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{crypto.symbol.toUpperCase()}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{crypto.name}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="text-right">
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            ${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className={`text-sm ${profitLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {profitLoss >= 0 ? '+' : ''}{profitLossPercentage.toFixed(2)}%
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* AI Analysis Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">AI Portfolio Analysis</h2>
+              <AIChat 
+                className="flex-1 w-full" 
+                userId={user.id} 
+                context={{
+                  portfolio: portfolio.map(asset => {
+                    const crypto = cryptoData.find(c => c.id === asset.id);
+                    return {
+                      symbol: asset.symbol,
+                      amount: asset.amount,
+                      purchasePrice: asset.purchasePrice,
+                      currentPrice: crypto?.current_price || 0,
+                      change24h: crypto?.price_change_percentage_24h || 0
+                    };
+                  }),
+                  performance
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent mb-2">
+                  Real-time
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Market Data</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent mb-2">
+                  AI Insights
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Portfolio Analysis</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent mb-2">
+                  24/7
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Tracking</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

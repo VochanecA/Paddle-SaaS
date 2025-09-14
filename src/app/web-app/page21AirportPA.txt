@@ -1,0 +1,210 @@
+'use client';
+
+import { useState } from 'react';
+
+interface AnnouncementOptions {
+  flightNumber: string;
+  company: string;
+  destination: string;
+  status: string;
+  language: 'en' | 'de';
+}
+
+export default function PAAudioGenerator() {
+  const [mode, setMode] = useState<'custom' | 'flight'>('flight');
+  const [customText, setCustomText] = useState('');
+  const [options, setOptions] = useState<AnnouncementOptions>({
+    flightNumber: '',
+    company: '',
+    destination: '',
+    status: 'boarding',
+    language: 'en',
+  });
+
+  const [error, setError] = useState<string | null>(null);
+
+  function buildFlightMessage(o: AnnouncementOptions): string {
+    switch (o.language) {
+      case 'de':
+        switch (o.status) {
+          case 'boarding':
+            return `Flug ${o.flightNumber} mit ${o.company} nach ${o.destination} beginnt jetzt mit dem Boarding. Bitte begeben Sie sich zum Gate.`;
+          case 'checkin':
+            return `Der Check-in für Flug ${o.flightNumber} mit ${o.company} nach ${o.destination} ist jetzt geöffnet.`;
+          case 'delay':
+            return `Flug ${o.flightNumber} mit ${o.company} nach ${o.destination} hat Verspätung. Bitte achten Sie auf weitere Durchsagen.`;
+          case 'lastcall':
+            return `Letzter Aufruf für Flug ${o.flightNumber} mit ${o.company} nach ${o.destination}. Bitte gehen Sie sofort zum Gate.`;
+          case 'closed':
+            return `Das Boarding für Flug ${o.flightNumber} mit ${o.company} nach ${o.destination} ist nun geschlossen.`;
+          default:
+            return '';
+        }
+      default: // English
+        switch (o.status) {
+          case 'boarding':
+            return `Flight ${o.flightNumber} with ${o.company} to ${o.destination} is now boarding. Please proceed to the gate.`;
+          case 'checkin':
+            return `Check-in is now open for flight ${o.flightNumber} with ${o.company} to ${o.destination}.`;
+          case 'delay':
+            return `Flight ${o.flightNumber} with ${o.company} to ${o.destination} is delayed. Please wait for further announcements.`;
+          case 'lastcall':
+            return `Last call for flight ${o.flightNumber} with ${o.company} to ${o.destination}. Please proceed immediately to the gate.`;
+          case 'closed':
+            return `Boarding for flight ${o.flightNumber} with ${o.company} to ${o.destination} is now closed.`;
+          default:
+            return '';
+        }
+    }
+  }
+
+  function generateText(): string {
+    if (mode === 'custom') return customText.trim();
+    return buildFlightMessage(options);
+  }
+
+  function speak() {
+    const text = generateText();
+    if (!text) {
+      setError('Please enter text or flight details.');
+      return;
+    }
+    setError(null);
+
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      setError('Speech Synthesis not supported in this browser.');
+      return;
+    }
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = options.language === 'de' ? 'de-DE' : 'en-US';
+    utter.rate = 1;
+    utter.pitch = 1;
+    synth.speak(utter);
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950">
+      <main className="max-w-3xl mx-auto p-6">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-indigo-600 to-blue-600 text-transparent bg-clip-text">
+          Airport PA Announcement Generator
+        </h1>
+
+        {/* Mode toggle */}
+        <div className="flex justify-center mb-6 gap-4">
+          <button
+            className={`px-4 py-2 rounded-lg border ${
+              mode === 'flight'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-800'
+            }`}
+            onClick={() => setMode('flight')}
+          >
+            Flight Mode
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${
+              mode === 'custom'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-800'
+            }`}
+            onClick={() => setMode('custom')}
+          >
+            Custom Text
+          </button>
+        </div>
+
+        {/* Flight mode form */}
+        {mode === 'flight' && (
+          <div className="space-y-4 bg-gray-50 dark:bg-gray-900 p-6 rounded-xl border dark:border-gray-700">
+            <input
+              type="text"
+              placeholder="Flight Number (e.g. LH123)"
+              value={options.flightNumber}
+              onChange={(e) =>
+                setOptions({ ...options, flightNumber: e.target.value })
+              }
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            />
+            <input
+              type="text"
+              placeholder="Company (e.g. Lufthansa)"
+              value={options.company}
+              onChange={(e) =>
+                setOptions({ ...options, company: e.target.value })
+              }
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            />
+            <input
+              type="text"
+              placeholder="Destination (e.g. Berlin)"
+              value={options.destination}
+              onChange={(e) =>
+                setOptions({ ...options, destination: e.target.value })
+              }
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            />
+
+            <select
+              value={options.status}
+              onChange={(e) =>
+                setOptions({ ...options, status: e.target.value })
+              }
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option value="boarding">Boarding</option>
+              <option value="checkin">Check-in</option>
+              <option value="delay">Delay</option>
+              <option value="lastcall">Last Call</option>
+              <option value="closed">Closed</option>
+            </select>
+
+            <select
+              value={options.language}
+              onChange={(e) =>
+                setOptions({
+                  ...options,
+                  language: e.target.value as 'en' | 'de',
+                })
+              }
+              className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </div>
+        )}
+
+        {/* Custom mode form */}
+        {mode === 'custom' && (
+          <textarea
+            rows={4}
+            placeholder="Type your announcement text..."
+            value={customText}
+            onChange={(e) => setCustomText(e.target.value)}
+            className="w-full p-3 rounded-lg border dark:border-gray-700 dark:bg-gray-800"
+          />
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>
+        )}
+
+        {/* Preview text */}
+        <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-800 dark:text-gray-200">
+          <strong>Preview:</strong> {generateText()}
+        </div>
+
+        {/* Play button */}
+        <button
+          onClick={speak}
+          className="mt-6 w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold shadow hover:opacity-90 transition"
+        >
+          🔊 Play Announcement
+        </button>
+      </main>
+    </div>
+  );
+}

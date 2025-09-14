@@ -1,0 +1,332 @@
+// src/app/web-app/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Loader2, FileText, Search, CheckCircle, Copy } from 'lucide-react';
+
+interface SEOContent {
+  title: string;
+  metaDescription: string;
+  content: string;
+  keywords: string[];
+  wordCount: number;
+}
+
+interface SubscriptionStatus {
+  hasActiveSubscription: boolean;
+  isLoading: boolean;
+}
+
+const WebApp = () => {
+  const [topic, setTopic] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [tone, setTone] = useState('professional');
+  const [seoContent, setSeoContent] = useState<SEOContent | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>({
+    hasActiveSubscription: false,
+    isLoading: true,
+  });
+  
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Check subscription status
+  useEffect(() => {
+    const checkSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('customer_id')
+          .eq('email', user.email)
+          .single();
+
+        if (!customer) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: subscriptions } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('customer_id', customer.customer_id);
+
+        const hasActiveSubscription = subscriptions?.some(
+          sub => sub.subscription_status === 'active' || sub.subscription_status === 'trialing'
+        ) || false;
+
+        setSubscriptionStatus({
+          hasActiveSubscription,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error('Error checking subscription:', err);
+        setSubscriptionStatus({
+          hasActiveSubscription: false,
+          isLoading: false,
+        });
+      }
+    };
+
+    checkSubscription();
+  }, [supabase]);
+
+  const generateSEOContent = async () => {
+    if (!topic.trim()) {
+      setError('Please enter a topic');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert SEO content writer. Generate SEO-optimized blog content based on the user's requirements. 
+              Return the response in JSON format with the following structure: 
+              { 
+                "title": "SEO-optimized title",
+                "metaDescription": "Compelling meta description under 160 characters",
+                "content": "Full blog post content with proper headings and formatting",
+                "keywords": ["keyword1", "keyword2", "keyword3"],
+                "wordCount": number
+              }
+              
+              The content should be well-structured with H2 and H3 headings, include the target keywords naturally, 
+              and be written in a ${tone} tone for ${targetAudience || 'general audience'}. 
+              Include the additional keywords: ${keywords || 'general keywords'}.`,
+            },
+            {
+              role: 'user',
+              content: `Generate SEO-optimized blog content about: ${topic}`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      try {
+        const contentResult: SEOContent = JSON.parse(data.content);
+        setSeoContent(contentResult);
+      } catch (parseError) {
+        // If the response isn't valid JSON, extract content from text
+        setSeoContent({
+          title: topic,
+          metaDescription: `SEO-optimized content about ${topic}`,
+          content: data.content,
+          keywords: keywords.split(',').map(k => k.trim()).filter(k => k),
+          wordCount: data.content.split(/\s+/).length,
+        });
+      }
+    } catch (err) {
+      console.error('Error generating content:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate content');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (subscriptionStatus.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!subscriptionStatus.hasActiveSubscription) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-md w-full">
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-center mb-2">Subscription Required</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
+              You need an active subscription to access the AI-powered content generator.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => router.push('/pricing')}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
+              >
+                View Pricing Plans
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">
+            SEO Content Generator
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            AI-powered tool to create SEO-optimized blog content that ranks well and engages readers.
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Content Requirements</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Topic *
+              </label>
+              <input
+                id="topic"
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g., Benefits of remote work for productivity"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Additional Keywords
+              </label>
+              <input
+                id="keywords"
+                type="text"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder="e.g., remote work, productivity, work-life balance"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="audience" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Target Audience
+              </label>
+              <input
+                id="audience"
+                type="text"
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="e.g., working professionals, entrepreneurs"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="tone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Tone
+              </label>
+              <select
+                id="tone"
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="informative">Informative</option>
+                <option value="persuasive">Persuasive</option>
+                <option value="conversational">Conversational</option>
+              </select>
+            </div>
+            
+            <button
+              onClick={generateSEOContent}
+              disabled={isGenerating || !topic.trim()}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Content...
+                </>
+              ) : (
+                'Generate SEO Content'
+              )}
+            </button>
+          </div>
+        </div>
+
+        {seoContent && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-2xl font-bold mb-2">{seoContent.title}</h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-2">{seoContent.metaDescription}</p>
+                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                  <span>{seoContent.wordCount} words</span>
+                  <span>•</span>
+                  <div className="flex gap-1">
+                    {seoContent.keywords.map((keyword, index) => (
+                      <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded text-xs">
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => copyToClipboard(seoContent.content)}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                title="Copy content"
+              >
+                {copied ? <CheckCircle className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+              </button>
+            </div>
+            
+            <div className="prose prose-sm max-w-none dark:prose-invert border-t border-gray-200 dark:border-gray-700 pt-6">
+              <div dangerouslySetInnerHTML={{ __html: seoContent.content.replace(/\n/g, '<br />') }} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default WebApp;

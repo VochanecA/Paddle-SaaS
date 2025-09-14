@@ -1,0 +1,601 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+// Type definitions for type safety
+type AircraftType = 'A321' | 'B737-900' | 'A320' | 'B737-800' | 'ATR72' | 'DHC8' | 'Other';
+type ParkingPosition = 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6' | 'P7';
+
+interface FlightSchedule {
+  id: string;
+  flightNumber: string;
+  aircraftType: AircraftType;
+  arrivalTime: string;
+  departureTime: string;
+  parkingPosition: ParkingPosition;
+  status: 'scheduled' | 'boarding' | 'departed';
+}
+
+interface NewFlightRequest {
+  flightNumber: string;
+  aircraftType: AircraftType;
+  arrivalTime: string;
+  departureTime: string;
+}
+
+interface SlotAnalysis {
+  available: boolean;
+  recommendedPosition?: ParkingPosition;
+  conflicts?: string[];
+  recommendations?: string;
+  iataCompliance?: boolean;
+}
+
+const LARGE_AIRCRAFT: AircraftType[] = ['A321', 'B737-900'];
+const LARGE_POSITIONS: ParkingPosition[] = ['P1', 'P2'];
+const ALL_POSITIONS: ParkingPosition[] = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'];
+
+export default function WebAppPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [schedules, setSchedules] = useState<FlightSchedule[]>([]);
+  const [newFlight, setNewFlight] = useState<NewFlightRequest>({
+    flightNumber: '',
+    aircraftType: 'A320',
+    arrivalTime: '',
+    departureTime: ''
+  });
+  const [analysisResult, setAnalysisResult] = useState<SlotAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const router = useRouter();
+
+  // Initialize with some mock data
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('Nije pronađena aktivna sesija, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('Korisnik nije pronađen, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      if (!fetchedUser.email) {
+        console.warn('Email korisnika nije pronađen za autentifikovanog korisnika');
+        router.push('/account?message=user_error');
+        return;
+      }
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('Nema aktivne pretplate, preusmjeravanje na nalog');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      setIsLoading(false);
+      
+      // Initialize with mock schedule data
+      setSchedules([
+        {
+          id: '1',
+          flightNumber: 'JU402',
+          aircraftType: 'A321',
+          arrivalTime: '08:30',
+          departureTime: '10:15',
+          parkingPosition: 'P1',
+          status: 'scheduled'
+        },
+        {
+          id: '2',
+          flightNumber: 'LH1732',
+          aircraftType: 'A320',
+          arrivalTime: '09:45',
+          departureTime: '11:20',
+          parkingPosition: 'P3',
+          status: 'scheduled'
+        },
+        {
+          id: '3',
+          flightNumber: 'OU411',
+          aircraftType: 'ATR72',
+          arrivalTime: '11:30',
+          departureTime: '12:45',
+          parkingPosition: 'P5',
+          status: 'scheduled'
+        }
+      ]);
+    };
+    fetchUserData().catch((error) => {
+      console.warn('Greška u fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      if (customerError || !customer) {
+        console.warn('Klijent nije pronađen za email:', userEmail);
+        return false;
+      }
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      if (subscriptionsError) {
+        console.warn('Greška pri provjeri pretplata:', subscriptionsError.message);
+        return false;
+      }
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Greška pri provjeri statusa pretplate:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handleInputChange = (field: keyof NewFlightRequest, value: string) => {
+    setNewFlight(prev => ({ ...prev, [field]: value }));
+  };
+
+  const analyzeSlotAvailability = async () => {
+    if (!user) return;
+    
+    setIsAnalyzing(true);
+    setError('');
+    setAnalysisResult(null);
+    
+    try {
+      // Prepare the prompt for AI analysis
+      const prompt = `Ti si AI asistent za upravljanje parking pozicijama na Aerodromu Tivat (TIV). 
+      
+      Ograničenja aerodroma:
+      - 7 parking pozicija: P1, P2, P3, P4, P5, P6, P7
+      - Samo P1 i P2 mogu primiti velike avione (A321, B737-900)
+      - Aerodrom radi samo tokom dnevnih sati (približno 06:00 do 20:00)
+      - Moraš slijediti IATA Worldwide Scheduling Guidelines
+      
+      Trenutni raspored letova:
+      ${schedules.map(s => 
+        `- Let ${s.flightNumber} (${s.aircraftType}): ${s.arrivalTime}-${s.departureTime} na poziciji ${s.parkingPosition}`
+      ).join('\n')}
+      
+      Zahtjev za novi let:
+      - Broj leta: ${newFlight.flightNumber}
+      - Tip aviona: ${newFlight.aircraftType}
+      - Vrijeme dolaska: ${newFlight.arrivalTime}
+      - Vrijeme polijetanja: ${newFlight.departureTime}
+      
+      VAŽNO: Proveri parking pozicije redom (P1, P2, P3, P4, P5, P6, P7) i dodeli prvu slobodnu poziciju koja je kompatibilna sa veličinom aviona I slobodna u traženom vremenskom periodu.
+      
+      Pravila za provjeru dostupnosti:
+      1. Za svaku poziciju redom:
+         a. Proveri da li je pozicija kompatibilna sa tipom aviona (veliki avioni samo na P1 i P2)
+         b. Proveri da li pozicija ima vremenski konflikt sa bilo kojim postojećim letom
+         c. Vremenski konflikt postoji ako novo vrijeme dolaska ili polijetanja preklapa sa postojećim letom na istoj poziciji
+         d. Uzmi u obzir minimalno vrijeme za obradu (30min za male avione, 45min za velike avione) između letova
+      2. Ako nađeš slobodnu poziciju, dodeli je i zaustavi pretragu
+      3. Ako nijedna pozicija nije slobodna, let ne može biti zakazan
+      
+      Molim pruži JSON odgovor sa sljedećom strukturom:
+      {
+        "available": boolean,
+        "recommendedPosition": "P1"|"P2"|"P3"|"P4"|"P5"|"P6"|"P7"|null,
+        "conflicts": ["string"],
+        "recommendations": "string",
+        "iataCompliance": boolean
+      }
+      
+      U obzir uzmi:
+      1. Kompatibilnost veličine aviona sa parking pozicijama
+      2. Vremenske konflikte sa postojećim letovima na istoj poziciji
+      3. Ograničenja rada tokom dana
+      4. IATA smjernice za zakazivanje
+      5. Minimalno vrijeme za obradu između letova`;
+
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'Ti si AI asistent za upravljanje parking pozicijama na aerodromu koji pruža JSON odgovore.' },
+            { role: 'user', content: prompt }
+          ],
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Neuspješna analiza dostupnosti parking mjesta');
+      }
+      
+      const data = await response.json();
+      const content = data.content;
+      
+      // Try to extract JSON from the response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsedResult: SlotAnalysis = JSON.parse(jsonMatch[0]);
+          setAnalysisResult(parsedResult);
+        } catch (parseError) {
+          console.error('Neuspješno parsiranje JSON odgovora:', parseError);
+          // Fallback to raw response
+          setAnalysisResult({
+            available: false,
+            recommendations: content,
+            iataCompliance: false
+          });
+        }
+      } else {
+        // Fallback if no JSON found
+        setAnalysisResult({
+          available: false,
+          recommendations: content,
+          iataCompliance: false
+        });
+      }
+    } catch (err) {
+      console.error('Greška u analizi:', err);
+      setError('Neuspješna analiza dostupnosti parking mjesta. Pokušajte ponovo.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleScheduleFlight = () => {
+    if (!analysisResult?.available || !analysisResult.recommendedPosition) return;
+    
+    const newSchedule: FlightSchedule = {
+      id: Date.now().toString(),
+      flightNumber: newFlight.flightNumber,
+      aircraftType: newFlight.aircraftType,
+      arrivalTime: newFlight.arrivalTime,
+      departureTime: newFlight.departureTime,
+      parkingPosition: analysisResult.recommendedPosition,
+      status: 'scheduled'
+    };
+    
+    setSchedules(prev => [...prev, newSchedule]);
+    setAnalysisResult(null);
+    setNewFlight({
+      flightNumber: '',
+      aircraftType: 'A320',
+      arrivalTime: '',
+      departureTime: ''
+    });
+  };
+
+  const isLargeAircraft = (type: AircraftType) => LARGE_AIRCRAFT.includes(type);
+  const isLargePosition = (position: ParkingPosition) => LARGE_POSITIONS.includes(position);
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Učitavanje...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 to-blue-100 dark:from-gray-900 dark:to-blue-900/20 transition-all duration-700">
+      <main className="relative">
+        {/* Hero Section */}
+        <section className="pt-8 pb-4 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  Menadžer parking mjesta Aerodroma Tivat aktivan
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
+                Upravljanje parking mjestima na{' '}
+                <span className="bg-gradient-to-r from-blue-600 via-cyan-600 to-sky-600 dark:from-blue-400 dark:via-cyan-400 dark:to-sky-400 bg-clip-text text-transparent">
+                  AI pogonu
+                </span>
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                Optimizujte raspored letova na Aerodromu Tivat pomoću AI dodeljivanja parking mjesta. Upravljajte sa 7 parking pozicija u skladu sa IATA propisima.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Airport Info Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Ograničenja Aerodroma Tivat</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="font-medium text-blue-800 dark:text-blue-300 mb-1">Parking pozicije</div>
+                  <div className="text-gray-700 dark:text-gray-300">Ukupno 7 pozicija (P1-P7)</div>
+                </div>
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                  <div className="font-medium text-amber-800 dark:text-amber-300 mb-1">Veliki avioni</div>
+                  <div className="text-gray-700 dark:text-gray-300">Samo P1 & P2 za A321/B737-900</div>
+                </div>
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                  <div className="font-medium text-emerald-800 dark:text-emerald-300 mb-1">Radno vrijeme</div>
+                  <div className="text-gray-700 dark:text-gray-300">Samo od izlaska do zalaska sunca</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Schedule Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Trenutni raspored letova</h2>
+                <div className="text-sm font-medium px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                  {schedules.length} zakazanih letova
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Let</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Avion</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Vremena</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pozicija</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {schedules.map((flight) => (
+                      <tr key={flight.id}>
+                        <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-900 dark:text-white">{flight.flightNumber}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            isLargeAircraft(flight.aircraftType) 
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' 
+                              : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                          }`}>
+                            {flight.aircraftType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300">
+                          {flight.arrivalTime} - {flight.departureTime}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            isLargePosition(flight.parkingPosition) 
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' 
+                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                          }`}>
+                            {flight.parkingPosition}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            flight.status === 'scheduled' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
+                            flight.status === 'boarding' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' :
+                            'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                          }`}>
+                            {flight.status === 'scheduled' ? 'Zakazan' : 
+                             flight.status === 'boarding' ? 'Ukrcaj' : 'Poletio'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* New Flight Request Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Zahtjev za novi parking slot</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Broj leta
+                  </label>
+                  <input
+                    type="text"
+                    value={newFlight.flightNumber}
+                    onChange={(e) => handleInputChange('flightNumber', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="npr. JU402"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Tip aviona
+                  </label>
+                  <select
+                    value={newFlight.aircraftType}
+                    onChange={(e) => handleInputChange('aircraftType', e.target.value as AircraftType)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="A320">A320</option>
+                    <option value="A321">A321 (Veliki)</option>
+                    <option value="B737-800">B737-800</option>
+                    <option value="B737-900">B737-900 (Veliki)</option>
+                    <option value="ATR72">ATR72</option>
+                    <option value="DHC8">DHC8</option>
+                    <option value="Other">Ostalo</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Vrijeme dolaska
+                  </label>
+                  <input
+                    type="time"
+                    value={newFlight.arrivalTime}
+                    onChange={(e) => handleInputChange('arrivalTime', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Vrijeme polijetanja
+                  </label>
+                  <input
+                    type="time"
+                    value={newFlight.departureTime}
+                    onChange={(e) => handleInputChange('departureTime', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={analyzeSlotAvailability}
+                  disabled={isAnalyzing || !newFlight.flightNumber || !newFlight.arrivalTime || !newFlight.departureTime}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAnalyzing ? 'Analiziranje...' : 'Provjeri dostupnost parking mjesta'}
+                </button>
+              </div>
+              
+              {/* Analysis Results */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <div className="text-red-700 dark:text-red-400 font-medium">Greška</div>
+                  <div className="text-red-600 dark:text-red-300 mt-1">{error}</div>
+                </div>
+              )}
+              
+              {analysisResult && (
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="text-blue-700 dark:text-blue-400 font-medium">Rezultati analize parking mjesta</div>
+                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      analysisResult.available 
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' 
+                        : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                    }`}>
+                      {analysisResult.available ? 'Dostupno' : 'Nije dostupno'}
+                    </div>
+                  </div>
+                  
+                  {analysisResult.recommendedPosition && (
+                    <div className="mb-2">
+                      <span className="font-medium text-gray-900 dark:text-white">Preporučena pozicija: </span>
+                      <span className="text-gray-700 dark:text-gray-300">{analysisResult.recommendedPosition}</span>
+                    </div>
+                  )}
+                  
+                  {analysisResult.conflicts && analysisResult.conflicts.length > 0 && (
+                    <div className="mb-2">
+                      <span className="font-medium text-gray-900 dark:text-white">Konflikti: </span>
+                      <span className="text-gray-700 dark:text-gray-300">{analysisResult.conflicts.join(', ')}</span>
+                    </div>
+                  )}
+                  
+                  {analysisResult.recommendations && (
+                    <div className="mb-2">
+                      <span className="font-medium text-gray-900 dark:text-white">Preporuke: </span>
+                      <span className="text-gray-700 dark:text-gray-300">{analysisResult.recommendations}</span>
+                    </div>
+                  )}
+                  
+                  <div className="mb-2">
+                    <span className="font-medium text-gray-900 dark:text-white">IATA usklađenost: </span>
+                    <span className={`${
+                      analysisResult.iataCompliance 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {analysisResult.iataCompliance ? 'Usklađeno' : 'Nije usklađeno'}
+                    </span>
+                  </div>
+                  
+                  {analysisResult.available && (
+                    <button
+                      onClick={handleScheduleFlight}
+                      className="mt-4 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
+                    >
+                      Zakazaj let
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-transparent mb-2">
+                  7
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Parking pozicija</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 dark:from-amber-400 dark:to-orange-400 bg-clip-text text-transparent mb-2">
+                  2
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Mjesta za velike avione</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent mb-2">
+                  IATA
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Usklađeno zakazivanje</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

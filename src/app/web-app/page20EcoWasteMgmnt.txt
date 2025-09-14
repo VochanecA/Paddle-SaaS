@@ -1,0 +1,612 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
+import AIChat from '@/components/AIChat';
+import type { User } from '@supabase/supabase-js';
+
+// Types for our waste management data
+interface WasteEntry {
+  id: string;
+  date: string;
+  category: WasteCategory;
+  amount: number;
+  unit: string;
+  description?: string;
+}
+
+interface WasteStats {
+  totalWaste: number;
+  categoryBreakdown: Record<WasteCategory, number>;
+  weeklyAverage: number;
+  reductionGoal: number;
+}
+
+interface EcoTip {
+  id: string;
+  title: string;
+  description: string;
+  impact: 'low' | 'medium' | 'high';
+  category: WasteCategory;
+}
+
+type WasteCategory = 'plastic' | 'paper' | 'glass' | 'metal' | 'organic' | 'electronic' | 'other';
+
+// Icon components for each waste category
+const WasteCategoryIcons = {
+  plastic: () => (
+    <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  ),
+  paper: () => (
+    <svg className="w-6 h-6 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  ),
+  glass: () => (
+    <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  metal: () => (
+    <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+    </svg>
+  ),
+  organic: () => (
+    <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+    </svg>
+  ),
+  electronic: () => (
+    <svg className="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+    </svg>
+  ),
+  other: () => (
+    <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+    </svg>
+  ),
+};
+
+export default function EcoTrackWasteManager() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [wasteEntries, setWasteEntries] = useState<WasteEntry[]>([]);
+  const [activeCategory, setActiveCategory] = useState<WasteCategory>('plastic');
+  const [newEntry, setNewEntry] = useState({ amount: 0, unit: 'kg', description: '' });
+  const [isSaving, setIsSaving] = useState(false);
+  const router = useRouter();
+
+  // Sample data for demonstration
+  const sampleEntries: WasteEntry[] = [
+    { id: '1', date: '2023-10-15', category: 'plastic', amount: 2.5, unit: 'kg', description: 'Water bottles' },
+    { id: '2', date: '2023-10-14', category: 'paper', amount: 1.2, unit: 'kg', description: 'Newspapers and mail' },
+    { id: '3', date: '2023-10-13', category: 'organic', amount: 3.1, unit: 'kg', description: 'Food waste' },
+    { id: '4', date: '2023-10-12', category: 'plastic', amount: 1.8, unit: 'kg', description: 'Packaging materials' },
+    { id: '5', date: '2023-10-11', category: 'electronic', amount: 1, unit: 'item', description: 'Old phone' },
+  ];
+
+  const ecoTips: EcoTip[] = [
+    { 
+      id: '1', 
+      title: 'Use Reusable Bags', 
+      description: 'Switch to reusable shopping bags to reduce plastic waste.', 
+      impact: 'high', 
+      category: 'plastic' 
+    },
+    { 
+      id: '2', 
+      title: 'Compost Food Scraps', 
+      description: 'Start composting organic waste to reduce landfill contribution.', 
+      impact: 'medium', 
+      category: 'organic' 
+    },
+    { 
+      id: '3', 
+      title: 'Digital Documents', 
+      description: 'Opt for digital bills and statements to reduce paper waste.', 
+      impact: 'medium', 
+      category: 'paper' 
+    },
+    { 
+      id: '4', 
+      title: 'Reusable Water Bottle', 
+      description: 'Carry a reusable water bottle instead of buying plastic ones.', 
+      impact: 'high', 
+      category: 'plastic' 
+    },
+    { 
+      id: '5', 
+      title: 'Proper E-Waste Disposal', 
+      description: 'Find certified e-waste recyclers for old electronics.', 
+      impact: 'high', 
+      category: 'electronic' 
+    },
+  ];
+
+  // Calculate waste statistics
+  const calculateStats = (): WasteStats => {
+    const totalWaste = wasteEntries.reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const categoryBreakdown = wasteEntries.reduce((acc, entry) => {
+      acc[entry.category] = (acc[entry.category] || 0) + entry.amount;
+      return acc;
+    }, {} as Record<WasteCategory, number>);
+
+    // Fill in zeros for missing categories
+    const categories: WasteCategory[] = ['plastic', 'paper', 'glass', 'metal', 'organic', 'electronic', 'other'];
+    categories.forEach(cat => {
+      if (!categoryBreakdown[cat]) categoryBreakdown[cat] = 0;
+    });
+
+    return {
+      totalWaste,
+      categoryBreakdown,
+      weeklyAverage: totalWaste / 4, // Assuming a month of data
+      reductionGoal: totalWaste * 0.8, // Aim for 20% reduction
+    };
+  };
+
+  const stats = calculateStats();
+
+  // Initialize component
+  useEffect(() => {
+    // Always scroll to top when this page loads
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      
+      // Check session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+      
+      // Fetch user data
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('User not found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+      
+      if (!fetchedUser.email) {
+        console.warn('User email not found for authenticated user');
+        router.push('/account?message=user_error');
+        return;
+      }
+      
+      // Check subscription status
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      
+      // Fetch user's waste entries from the database
+      await fetchWasteEntries(fetchedUser.id);
+      
+      setIsLoading(false);
+    };
+    
+    fetchUserData().catch((error) => {
+      console.warn('Error in fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+    
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('Auth event:', event, 'Session:', newSession);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+    
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  // Fetch waste entries from the database
+  const fetchWasteEntries = async (userId: string) => {
+    try {
+      const response = await fetch(`/api/waste-entries?userId=${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWasteEntries(data);
+      } else {
+        // Fallback to sample data if API fails
+        setWasteEntries(sampleEntries);
+      }
+    } catch (error) {
+      console.error('Error fetching waste entries:', error);
+      setWasteEntries(sampleEntries);
+    }
+  };
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      
+      if (customerError || !customer) {
+        console.warn('Customer not found for email:', userEmail);
+        return false;
+      }
+      
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      
+      if (subscriptionsError) {
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
+        return false;
+      }
+      
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Error checking subscription status:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handleAddEntry = async () => {
+    if (newEntry.amount <= 0 || !user) return;
+    
+    setIsSaving(true);
+    
+    const entry: Omit<WasteEntry, 'id'> = {
+      date: new Date().toISOString().split('T')[0],
+      category: activeCategory,
+      amount: newEntry.amount,
+      unit: newEntry.unit,
+      description: newEntry.description,
+    };
+    
+    try {
+      const response = await fetch('/api/waste-entries', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...entry,
+          userId: user.id,
+        }),
+      });
+      
+      if (response.ok) {
+        const savedEntry = await response.json();
+        setWasteEntries([savedEntry, ...wasteEntries]);
+        setNewEntry({ amount: 0, unit: 'kg', description: '' });
+      } else {
+        console.error('Failed to save waste entry');
+        // Fallback to local state update
+        const localEntry = { ...entry, id: Date.now().toString() };
+        setWasteEntries([localEntry as WasteEntry, ...wasteEntries]);
+        setNewEntry({ amount: 0, unit: 'kg', description: '' });
+      }
+    } catch (error) {
+      console.error('Error saving waste entry:', error);
+      // Fallback to local state update
+      const localEntry = { ...entry, id: Date.now().toString() };
+      setWasteEntries([localEntry as WasteEntry, ...wasteEntries]);
+      setNewEntry({ amount: 0, unit: 'kg', description: '' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Create a system message that includes the waste data for the AI
+  const getSystemMessage = () => {
+    const wasteSummary = `User's waste data: Total waste: ${stats.totalWaste.toFixed(1)}kg, Weekly average: ${stats.weeklyAverage.toFixed(1)}kg. `;
+    const categoriesSummary = Object.entries(stats.categoryBreakdown)
+      .map(([category, amount]) => `${category}: ${amount.toFixed(1)}kg`)
+      .join(', ');
+    
+    const tipsSummary = ecoTips.map(tip => `- ${tip.title}: ${tip.description} (Impact: ${tip.impact})`).join('\n');
+    
+    return `You are an eco-friendly waste management assistant. Help users reduce their waste footprint.
+    
+User's waste data: 
+- Total waste: ${stats.totalWaste.toFixed(1)}kg
+- Weekly average: ${stats.weeklyAverage.toFixed(1)}kg
+- Waste by category: ${categoriesSummary}
+    
+Available eco tips:
+${tipsSummary}
+
+Focus on providing personalized advice based on the user's waste patterns. Suggest specific actions they can take to reduce waste in their highest waste categories. Be encouraging and practical.`;
+  };
+
+  // Render loading state
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700">
+      <main className="relative">
+        {/* Header Section */}
+        <section className="pt-8 pb-4 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800/50 mb-6">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2" />
+                <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                  Eco Tracking Active
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
+                EcoTrack{' '}
+                <span className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent">
+                  Waste Manager
+                </span>
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                Track your waste footprint, get personalized reduction tips, and contribute to a greener planet.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Waste Stats Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Your Waste Impact</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-100 dark:border-green-800/50">
+                  <p className="text-sm text-green-700 dark:text-green-300">Total Waste Tracked</p>
+                  <p className="text-2xl font-bold text-green-800 dark:text-green-200">
+                    {stats.totalWaste.toFixed(1)} kg
+                  </p>
+                </div>
+                
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">Weekly Average</p>
+                  <p className="text-2xl font-bold text-blue-800 dark:text-blue-200">
+                    {stats.weeklyAverage.toFixed(1)} kg
+                  </p>
+                </div>
+                
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                  <p className="text-sm text-purple-700 dark:text-purple-300">Reduction Goal</p>
+                  <p className="text-2xl font-bold text-purple-800 dark:text-purple-200">
+                    {stats.reductionGoal.toFixed(1)} kg
+                  </p>
+                </div>
+              </div>
+
+              {/* Waste Category Breakdown */}
+              <div className="mb-6">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Waste by Category</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {Object.entries(stats.categoryBreakdown).map(([category, amount]) => {
+                    const IconComponent = WasteCategoryIcons[category as WasteCategory];
+                    return (
+                      <div 
+                        key={category} 
+                        className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col items-center"
+                      >
+                        <div className="mb-2">
+                          <IconComponent />
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 capitalize mb-1">{category}</div>
+                        <div className="font-medium text-gray-900 dark:text-white">{amount.toFixed(1)} kg</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Add Waste Entry Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Add New Waste Entry</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Waste Category
+                  </label>
+                  <select 
+                    value={activeCategory}
+                    onChange={(e) => setActiveCategory(e.target.value as WasteCategory)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="plastic">Plastic</option>
+                    <option value="paper">Paper</option>
+                    <option value="glass">Glass</option>
+                    <option value="metal">Metal</option>
+                    <option value="organic">Organic/Food</option>
+                    <option value="electronic">Electronic</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Amount
+                  </label>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={newEntry.amount}
+                      onChange={(e) => setNewEntry({...newEntry, amount: parseFloat(e.target.value) || 0})}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      placeholder="0.0"
+                    />
+                    <select 
+                      value={newEntry.unit}
+                      onChange={(e) => setNewEntry({...newEntry, unit: e.target.value})}
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 border-l-0 rounded-r-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    >
+                      <option value="kg">kg</option>
+                      <option value="items">items</option>
+                      <option value="bags">bags</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description (optional)
+                </label>
+                <input
+                  type="text"
+                  value={newEntry.description}
+                  onChange={(e) => setNewEntry({...newEntry, description: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  placeholder="e.g., Water bottles, food waste, etc."
+                />
+              </div>
+              
+              <button
+                onClick={handleAddEntry}
+                disabled={newEntry.amount <= 0 || isSaving}
+                className="mt-6 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  'Add Waste Entry'
+                )}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Eco Tips Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Personalized Eco Tips</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {ecoTips.map(tip => {
+                  const IconComponent = WasteCategoryIcons[tip.category];
+                  return (
+                    <div 
+                      key={tip.id} 
+                      className="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/50 rounded-xl p-5"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center">
+                          <div className="mr-3">
+                            <IconComponent />
+                          </div>
+                          <h3 className="font-semibold text-green-800 dark:text-green-200">{tip.title}</h3>
+                        </div>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          tip.impact === 'high' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-200' 
+                            : tip.impact === 'medium'
+                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800/30 dark:text-yellow-200'
+                              : 'bg-blue-100 text-blue-800 dark:bg-blue-800/30 dark:text-blue-200'
+                        }`}>
+                          {tip.impact} impact
+                        </span>
+                      </div>
+                      <p className="text-green-700 dark:text-green-300 text-sm ml-9">{tip.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* AI Analysis Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">AI Waste Analysis</h2>
+              <AIChat 
+                className="flex-1 w-full" 
+                userId={user.id}
+                systemMessage={getSystemMessage()}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Impact Stats Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-green-50 dark:bg-green-900/20">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-green-200/50 dark:border-green-800/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent mb-2">
+                  {wasteEntries.length}
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Items Tracked</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-green-200/50 dark:border-green-800/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 bg-clip-text text-transparent mb-2">
+                  {ecoTips.length}
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Eco Tips</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-green-200/50 dark:border-green-800/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-teal-600 to-cyan-600 dark:from-teal-400 dark:to-cyan-400 bg-clip-text text-transparent mb-2">
+                  24/7
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">AI Support</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

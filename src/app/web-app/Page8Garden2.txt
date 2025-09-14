@@ -1,0 +1,478 @@
+// src/app/web-app/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Loader2, Sprout, Droplets, Sun, Cloud, Thermometer, Copy, CheckCircle } from 'lucide-react';
+
+interface FarmingAdvice {
+  overview: string;
+  plantingSchedule: string[];
+  wateringGuide: string;
+  pestManagement: string;
+  soilPreparation: string;
+  harvestingTips: string;
+  seasonalConsiderations: string;
+}
+
+interface SubscriptionStatus {
+  hasActiveSubscription: boolean;
+  isLoading: boolean;
+}
+
+const WebApp = () => {
+  const [cropType, setCropType] = useState('');
+  const [gardenSize, setGardenSize] = useState('');
+  const [climateZone, setClimateZone] = useState('');
+  const [soilType, setSoilType] = useState('');
+  const [experience, setExperience] = useState('beginner');
+  const [advice, setAdvice] = useState<FarmingAdvice | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>({
+    hasActiveSubscription: false,
+    isLoading: true,
+  });
+  
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Check subscription status
+  useEffect(() => {
+    const checkSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('customer_id')
+          .eq('email', user.email)
+          .single();
+
+        if (!customer) {
+          setSubscriptionStatus({
+            hasActiveSubscription: false,
+            isLoading: false,
+          });
+          return;
+        }
+
+        const { data: subscriptions } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('customer_id', customer.customer_id);
+
+        const hasActiveSubscription = subscriptions?.some(
+          sub => sub.subscription_status === 'active' || sub.subscription_status === 'trialing'
+        ) || false;
+
+        setSubscriptionStatus({
+          hasActiveSubscription,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error('Error checking subscription:', err);
+        setSubscriptionStatus({
+          hasActiveSubscription: false,
+          isLoading: false,
+        });
+      }
+    };
+
+    checkSubscription();
+  }, [supabase]);
+
+  // Function to extract JSON from AI response
+  const extractJSONFromResponse = (content: string): FarmingAdvice | null => {
+    try {
+      // Try to parse as JSON directly
+      return JSON.parse(content);
+    } catch (e) {
+      try {
+        // Try to find JSON within markdown code blocks
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[1]);
+        }
+        
+        // Try to find JSON object in the text
+        const objectMatch = content.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          return JSON.parse(objectMatch[0]);
+        }
+        
+        return null;
+      } catch (e2) {
+        console.error('Failed to extract JSON from response:', e2);
+        return null;
+      }
+    }
+  };
+
+  const generateFarmingAdvice = async () => {
+    if (!cropType.trim()) {
+      setError('Please enter a crop type');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert in household farming and gardening. Provide personalized farming advice based on the user's inputs.
+              
+              Return your response in valid JSON format with the following structure:
+              {
+                "overview": "A brief overview of growing this crop for the user's specific conditions",
+                "plantingSchedule": ["Step 1:...", "Step 2:...", "Step 3:..."],
+                "wateringGuide": "Detailed watering instructions including frequency and amount",
+                "pestManagement": "Natural and organic pest management strategies",
+                "soilPreparation": "Soil preparation and improvement techniques",
+                "harvestingTips": "When and how to harvest for best results",
+                "seasonalConsiderations": "Special considerations for different seasons"
+              }
+              
+              Make sure your response is valid JSON. Do not include any text outside the JSON structure.
+              Provide specific, actionable advice tailored to a ${experience} gardener with a ${gardenSize} garden in ${climateZone} climate with ${soilType} soil.`,
+            },
+            {
+              role: 'user',
+              content: `I need advice for growing ${cropType} in my ${gardenSize} garden. I'm located in ${climateZone} climate zone and have ${soilType} soil. I consider myself a ${experience} gardener.`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Try to extract JSON from the response
+      let parsedAdvice: FarmingAdvice | null = extractJSONFromResponse(data.content);
+      
+      if (!parsedAdvice) {
+        // Create a fallback structure using the raw content
+        parsedAdvice = {
+          overview: data.content,
+          plantingSchedule: ["Research specific planting times for your climate zone"],
+          wateringGuide: "Check soil moisture regularly and water when dry",
+          pestManagement: "Monitor for common pests and use organic solutions",
+          soilPreparation: "Test and amend your soil based on crop requirements",
+          harvestingTips: "Harvest when produce is ripe for best flavor and nutrition",
+          seasonalConsiderations: "Adjust your care routine based on seasonal changes"
+        };
+      }
+      
+      setAdvice(parsedAdvice);
+    } catch (err) {
+      console.error('Error generating advice:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate advice');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (subscriptionStatus.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!subscriptionStatus.hasActiveSubscription) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-md w-full">
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-center mb-2">Subscription Required</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
+              You need an active subscription to access the AI farming assistant.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => router.push('/pricing')}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-md transition-colors"
+              >
+                View Pricing Plans
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-cyan-50 dark:from-gray-900 dark:to-gray-800">
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
+        <div className="mb-10 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full mb-6">
+            <Sprout className="h-8 w-8 text-white" />
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight mb-4">
+            Smart Farming Assistant
+          </h1>
+          <p className="text-xl text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">
+            Get personalized AI-powered advice for your household garden or small farm
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+            <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Tell us about your garden</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label htmlFor="crop" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                What are you growing? *
+              </label>
+              <input
+                id="crop"
+                type="text"
+                value={cropType}
+                onChange={(e) => setCropType(e.target.value)}
+                placeholder="e.g., Tomatoes, Lettuce, Herbs"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="size" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Garden size
+              </label>
+              <select
+                id="size"
+                value={gardenSize}
+                onChange={(e) => setGardenSize(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select size</option>
+                <option value="small balcony containers">Small balcony containers</option>
+                <option value="medium backyard garden">Medium backyard garden</option>
+                <option value="large garden plot">Large garden plot</option>
+                <option value="small farm">Small farm (under 1 acre)</option>
+              </select>
+            </div>
+            
+            <div>
+              <label htmlFor="climate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Climate zone
+              </label>
+              <select
+                id="climate"
+                value={climateZone}
+                onChange={(e) => setClimateZone(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select climate</option>
+                <option value="tropical">Tropical</option>
+                <option value="subtropical">Subtropical</option>
+                <option value="temperate">Temperate</option>
+                <option value="continental">Continental</option>
+                <option value="mediterranean">Mediterranean</option>
+                <option value="arid">Arid</option>
+              </select>
+            </div>
+            
+            <div>
+              <label htmlFor="soil" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Soil type
+              </label>
+              <select
+                id="soil"
+                value={soilType}
+                onChange={(e) => setSoilType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select soil type</option>
+                <option value="clay">Clay</option>
+                <option value="sandy">Sandy</option>
+                <option value="loamy">Loamy</option>
+                <option value="silty">Silty</option>
+                <option value="peaty">Peaty</option>
+                <option value="chalky">Chalky</option>
+              </select>
+            </div>
+            
+            <div>
+              <label htmlFor="experience" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Your experience level
+              </label>
+              <select
+                id="experience"
+                value={experience}
+                onChange={(e) => setExperience(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="experienced">Experienced</option>
+                <option value="expert">Expert</option>
+              </select>
+            </div>
+          </div>
+          
+          <button
+            onClick={generateFarmingAdvice}
+            disabled={isGenerating || !cropType.trim()}
+            className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium rounded-md disabled:bg-green-400 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02]"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating Advice...
+              </>
+            ) : (
+              'Get Farming Advice'
+            )}
+          </button>
+        </div>
+
+        {advice && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold mb-1">Your {cropType} Growing Guide</h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Personalized advice for your {gardenSize} in {climateZone} climate
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  const fullAdvice = `${cropType} Growing Guide
+
+Overview:
+${advice.overview}
+
+Planting Schedule:
+${advice.plantingSchedule.join('\n')}
+
+Watering Guide:
+${advice.wateringGuide}
+
+Pest Management:
+${advice.pestManagement}
+
+Soil Preparation:
+${advice.soilPreparation}
+
+Harvesting Tips:
+${advice.harvestingTips}
+
+Seasonal Considerations:
+${advice.seasonalConsiderations}`;
+                  copyToClipboard(fullAdvice);
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                title="Copy full guide"
+              >
+                {copied ? <CheckCircle className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
+                <h3 className="text-lg font-semibold mb-2 flex items-center">
+                  <Sprout className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
+                  Overview
+                </h3>
+                <p className="text-gray-700 dark:text-gray-300">{advice.overview}</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Sun className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
+                    Planting Schedule
+                  </h3>
+                  <ul className="space-y-2">
+                    {advice.plantingSchedule.map((step, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-blue-500 dark:text-blue-400">•</span>
+                        <span className="text-gray-700 dark:text-gray-300">{step}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
+                <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4 border border-cyan-200 dark:border-cyan-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Droplets className="h-5 w-5 text-cyan-600 dark:text-cyan-400 mr-2" />
+                    Watering Guide
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">{advice.wateringGuide}</p>
+                </div>
+                
+                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Cloud className="h-5 w-5 text-amber-600 dark:text-amber-400 mr-2" />
+                    Pest Management
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">{advice.pestManagement}</p>
+                </div>
+                
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Thermometer className="h-5 w-5 text-orange-600 dark:text-orange-400 mr-2" />
+                    Soil Preparation
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">{advice.soilPreparation}</p>
+                </div>
+                
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Sprout className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mr-2" />
+                    Harvesting Tips
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">{advice.harvestingTips}</p>
+                </div>
+                
+                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center">
+                    <Cloud className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-2" />
+                    Seasonal Considerations
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">{advice.seasonalConsiderations}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default WebApp;

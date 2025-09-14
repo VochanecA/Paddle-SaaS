@@ -23,7 +23,7 @@ const Hero = () => {
     setMounted(true);
   }, []);
 
-  const images: readonly string[] = ['/bc1.jpg', '/m2.jpg', '/m3.jpg'] as const;
+  const images: readonly string[] = ['/bc1.jpg', '/bc2.jpg', '/bc3.jpg'] as const;
   const heroTexts: readonly HeroText[] = [
     {
       heading: 'Build and Launch Your SaaS in Days',

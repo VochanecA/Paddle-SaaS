@@ -1,0 +1,471 @@
+'use client';
+
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+interface FinancialData {
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  savings: number;
+  debts: number;
+  investments: number;
+  age: number;
+  financialGoals: string;
+  riskTolerance: 'conservative' | 'moderate' | 'aggressive';
+}
+
+interface FinancialAnalysis {
+  emergencyFundStatus: 'adequate' | 'inadequate' | 'excellent';
+  debtToIncomeRatio: number;
+  savingsRate: number;
+  netWorth: number;
+  financialHealthScore: number;
+  shortTermRecommendations: string[];
+  longTermRecommendations: string[];
+  investmentSuggestions: string[];
+  riskAssessment: string;
+  budgetSuggestions: string[];
+  timelineProjections: Array<{
+    year: number;
+    projectedNetWorth: number;
+    milestones: string[];
+  }>;
+}
+
+export default function FinanceHealthCheckPage() {
+  const [financialData, setFinancialData] = useState<FinancialData>({
+    monthlyIncome: 0,
+    monthlyExpenses: 0,
+    savings: 0,
+    debts: 0,
+    investments: 0,
+    age: 30,
+    financialGoals: '',
+    riskTolerance: 'moderate'
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<FinancialAnalysis | null>(null);
+  const [error, setError] = useState('');
+  const router = useRouter();
+
+  const extractJSONFromResponse = useCallback((content: string): FinancialAnalysis | null => {
+    try {
+      return JSON.parse(content) as FinancialAnalysis;
+    } catch {
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || content.match(/{[\s\S]*}/);
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          return JSON.parse(jsonMatch[1]) as FinancialAnalysis;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+  }, []);
+
+  const createFallbackResult = useCallback((content: string): FinancialAnalysis => {
+    const netWorth = financialData.savings + financialData.investments - financialData.debts;
+    const savingsRate = ((financialData.monthlyIncome - financialData.monthlyExpenses) / financialData.monthlyIncome) * 100;
+    const debtToIncome = (financialData.debts / (financialData.monthlyIncome * 12)) * 100;
+    
+    return {
+      emergencyFundStatus: financialData.savings >= financialData.monthlyExpenses * 3 ? 'adequate' : 'inadequate',
+      debtToIncomeRatio: debtToIncome,
+      savingsRate: savingsRate,
+      netWorth: netWorth,
+      financialHealthScore: Math.min(100, Math.max(0, Math.round((netWorth / (financialData.monthlyIncome * 12)) * 25 + savingsRate))),
+      shortTermRecommendations: [
+        'Build emergency fund to cover 3-6 months of expenses',
+        'Review monthly budget for optimization opportunities'
+      ],
+      longTermRecommendations: [
+        'Consider diversifying investments based on risk tolerance',
+        'Set specific financial goals with timelines'
+      ],
+      investmentSuggestions: [
+        'Low-cost index funds for long-term growth',
+        'Consider retirement account contributions'
+      ],
+      riskAssessment: 'Moderate risk profile based on inputs',
+      budgetSuggestions: [
+        'Track all expenses for 30 days',
+        'Identify areas for potential savings'
+      ],
+      timelineProjections: [
+        {
+          year: 1,
+          projectedNetWorth: netWorth * 1.1,
+          milestones: ['Build emergency fund', 'Start investment portfolio']
+        }
+      ]
+    };
+  }, [financialData]);
+
+  const analyzeFinances = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    setAnalysis(null);
+    
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are a certified financial planner. Analyze financial data and provide comprehensive analysis in this exact JSON format: {
+                emergencyFundStatus: "adequate"|"inadequate"|"excellent",
+                debtToIncomeRatio: number,
+                savingsRate: number,
+                netWorth: number,
+                financialHealthScore: number,
+                shortTermRecommendations: string[],
+                longTermRecommendations: string[],
+                investmentSuggestions: string[],
+                riskAssessment: string,
+                budgetSuggestions: string[],
+                timelineProjections: Array<{year: number, projectedNetWorth: number, milestones: string[]}>
+              }. Provide specific, actionable advice.`
+            },
+            {
+              role: 'user',
+              content: `Analyze this financial situation: ${JSON.stringify(financialData)}. Provide personalized recommendations for improving financial health.`
+            }
+          ],
+          model: 'deepseek/deepseek-chat-v3.1:free',
+          temperature: 0.1,
+          maxTokens: 2000
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as { content?: string; error?: string };
+      
+      if (!data.content) {
+        throw new Error(data.error || 'No content in AI response');
+      }
+
+      const parsedAnalysis = extractJSONFromResponse(data.content);
+      
+      if (parsedAnalysis) {
+        if (typeof parsedAnalysis.financialHealthScore === 'number') {
+          setAnalysis(parsedAnalysis);
+        } else {
+          setAnalysis(createFallbackResult(data.content));
+        }
+      } else {
+        setAnalysis(createFallbackResult(data.content));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze finances');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [financialData, extractJSONFromResponse, createFallbackResult]);
+
+  const handleInputChange = useCallback((field: keyof FinancialData, value: string | number) => {
+    setFinancialData(prev => ({
+      ...prev,
+      [field]: typeof value === 'string' && !isNaN(Number(value)) ? Number(value) : value
+    }));
+  }, []);
+
+  const getScoreColor = useCallback((score: number) => {
+    if (score >= 80) return 'text-green-600 dark:text-green-400';
+    if (score >= 60) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-red-600 dark:text-red-400';
+  }, []);
+
+  const getStatusColor = useCallback((status: string) => {
+    switch (status) {
+      case 'excellent': return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300';
+      case 'adequate': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300';
+      case 'inadequate': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
+    }
+  }, []);
+
+  const formatCurrency = useCallback((amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  }, []);
+
+  const formatPercentage = useCallback((value: number) => {
+    return `${value.toFixed(1)}%`;
+  }, []);
+
+  const hasValidData = financialData.monthlyIncome > 0 && financialData.monthlyExpenses >= 0;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 transition-all duration-700">
+      <main className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800/50 mb-6">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2" />
+            <span className="text-sm font-medium text-green-800 dark:text-green-200">
+              AI Financial Health Check
+            </span>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Personal Finance Analysis
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Get personalized financial recommendations and improve your financial health
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Input Form */}
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Your Financial Information
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Monthly Income
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.monthlyIncome}
+                      onChange={(e) => handleInputChange('monthlyIncome', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="5000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Monthly Expenses
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.monthlyExpenses}
+                      onChange={(e) => handleInputChange('monthlyExpenses', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="3000"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Total Savings
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.savings}
+                      onChange={(e) => handleInputChange('savings', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="15000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Total Debts
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.debts}
+                      onChange={(e) => handleInputChange('debts', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="10000"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Investments
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.investments}
+                      onChange={(e) => handleInputChange('investments', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="25000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Age
+                    </label>
+                    <input
+                      type="number"
+                      value={financialData.age}
+                      onChange={(e) => handleInputChange('age', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="30"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Risk Tolerance
+                  </label>
+                  <select
+                    value={financialData.riskTolerance}
+                    onChange={(e) => handleInputChange('riskTolerance', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                  >
+                    <option value="conservative">Conservative</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Financial Goals
+                  </label>
+                  <textarea
+                    value={financialData.financialGoals}
+                    onChange={(e) => handleInputChange('financialGoals', e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-800 dark:text-white"
+                    placeholder="Retirement at 60, buy a house in 5 years, etc."
+                  />
+                </div>
+
+                <button
+                  onClick={analyzeFinances}
+                  disabled={isLoading || !hasValidData}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium py-3 px-4 rounded-md transition-colors"
+                  type="button"
+                >
+                  {isLoading ? 'Analyzing...' : 'Analyze My Finances'}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4">
+                <p className="text-red-800 dark:text-red-200">{error}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Results Section */}
+          <div className="space-y-6">
+            {analysis ? (
+              <>
+                {/* Financial Health Score */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Financial Health Score
+                  </h3>
+                  <div className="text-center">
+                    <div className={`text-5xl font-bold ${getScoreColor(analysis.financialHealthScore)} mb-2`}>
+                      {analysis.financialHealthScore}/100
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-400">Overall Financial Health</p>
+                  </div>
+                </div>
+
+                {/* Key Metrics */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Key Metrics
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                        {formatCurrency(analysis.netWorth)}
+                      </div>
+                      <div className="text-sm text-blue-600 dark:text-blue-400">Net Worth</div>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                      <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                        {formatPercentage(analysis.savingsRate)}
+                      </div>
+                      <div className="text-sm text-green-600 dark:text-green-400">Savings Rate</div>
+                    </div>
+                    <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                      <div className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
+                        {formatPercentage(analysis.debtToIncomeRatio)}
+                      </div>
+                      <div className="text-sm text-yellow-600 dark:text-yellow-400">Debt-to-Income</div>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                      <div className={`text-sm font-medium px-2 py-1 rounded-full ${getStatusColor(analysis.emergencyFundStatus)}`}>
+                        {analysis.emergencyFundStatus.toUpperCase()}
+                      </div>
+                      <div className="text-sm text-purple-600 dark:text-purple-400">Emergency Fund</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recommendations */}
+                <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Recommendations
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-medium text-green-600 dark:text-green-400 mb-2">Short Term</h4>
+                      <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                        {analysis.shortTermRecommendations.map((rec, index) => (
+                          <li key={index}>• {rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-blue-600 dark:text-blue-400 mb-2">Long Term</h4>
+                      <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                        {analysis.longTermRecommendations.map((rec, index) => (
+                          <li key={index}>• {rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-purple-600 dark:text-purple-400 mb-2">Investments</h4>
+                      <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                        {analysis.investmentSuggestions.map((suggestion, index) => (
+                          <li key={index}>• {suggestion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Placeholder */
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+                <div className="text-gray-400 dark:text-gray-500 mb-4">
+                  <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Your Financial Health Report
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  Enter your financial information to get personalized recommendations and improve your financial health
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
