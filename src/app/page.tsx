@@ -1,19 +1,17 @@
 // ./src/app/page.tsx
-// src/app/page.tsx
-import Hero from "@/components/Hero"; // Changed from named import to default import
-import { FeatureCard } from "@/components/FeatureCard";
-import Image from "next/image";
-import { getNextVersion } from "@/lib/getNextVersion";
-import Link from "next/link";
-
-// ... rest of the file remains the same ...
+import type { FC } from 'react';
+import Hero from '@/components/Hero';
+import { FeatureCard } from '@/components/FeatureCard';
+import Image from 'next/image';
+import { getNextVersion } from '@/lib/getNextVersion';
+import Link from 'next/link';
 
 /**
  * HomePage component - The main landing page for the SaaS Starter Kit
  * Includes Hero section, Features section with animated backgrounds, and CTAs
  * Optimized for performance, accessibility, and SEO
  */
-export default function HomePage() {
+const HomePage: FC = () => {
   return (
     <div className="relative min-h-screen bg-background text-foreground transition-colors duration-500">
       {/* Hero */}
@@ -45,10 +43,10 @@ export default function HomePage() {
               id="features-heading"
               className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 tracking-tight"
             >
-              Features That{" "}
+              Features That{' '}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
                 Empower
-              </span>{" "}
+              </span>{' '}
               Your SaaS
             </h2>
             <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
@@ -150,4 +148,6 @@ export default function HomePage() {
       </section>
     </div>
   );
-}
+};
+
+export default HomePage;
