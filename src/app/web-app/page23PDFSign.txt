@@ -1,0 +1,965 @@
+'use client';
+import { useState, useEffect, useRef, ChangeEvent, DragEvent, MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Upload, FileText, PenTool, Download, X, Move, RotateCw, ZoomIn, ZoomOut, Square, MousePointer } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
+
+interface SignaturePosition {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page: number;
+  rotation: number;
+}
+
+interface PdfPageInfo {
+  width: number;
+  height: number;
+  scale: number;
+  pageNumber: number;
+}
+
+// PDF.js types
+interface PDFPageProxy {
+  getViewport: (options: { scale: number }) => PDFPageViewport;
+  render: (options: { canvasContext: CanvasRenderingContext2D; viewport: PDFPageViewport }) => PDFRenderTask;
+}
+
+interface PDFPageViewport {
+  width: number;
+  height: number;
+  transform: number[];
+}
+
+interface PDFRenderTask {
+  promise: Promise<void>;
+}
+
+interface PDFDocumentProxy {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PDFPageProxy>;
+}
+
+declare global {
+  interface Window {
+    pdfjsLib: {
+      getDocument: (src: string | ArrayBuffer) => { promise: Promise<PDFDocumentProxy> };
+      GlobalWorkerOptions: {
+        workerSrc: string;
+      };
+    };
+  }
+}
+
+export default function WebAppPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [pdfPages, setPdfPages] = useState<PdfPageInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [signaturePositions, setSignaturePositions] = useState<SignaturePosition[]>([]);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedSignature, setSelectedSignature] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<number>(1);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isPdfLoaded, setIsPdfLoaded] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tool, setTool] = useState<'move' | 'resize'>('move');
+  const [currentRenderTask, setCurrentRenderTask] = useState<PDFRenderTask | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Load PDF.js
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+    };
+    document.head.appendChild(script);
+
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('No active session found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('User not found, redirecting to login');
+        router.push('/auth/login');
+        return;
+      }
+
+      if (!fetchedUser.email) {
+        console.warn('User email not found for authenticated user');
+        router.push('/account?message=user_error');
+        return;
+      }
+
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('No active subscription, redirecting to account');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      setIsLoading(false);
+    };
+
+    fetchUserData().catch((error) => {
+      console.warn('Error in fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log('Auth event:', event, 'Session:', newSession);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+
+      if (customerError || !customer) {
+        console.warn('Customer not found for email:', userEmail);
+        return false;
+      }
+
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+
+      if (subscriptionsError) {
+        console.warn('Error checking subscriptions:', subscriptionsError.message);
+        return false;
+      }
+
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Error checking subscription status:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handlePdfUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      setError('PDF file size must be less than 50MB');
+      return;
+    }
+
+    if (file.type !== 'application/pdf') {
+      setError('Please upload a valid PDF file');
+      return;
+    }
+
+    setPdfFile(file);
+    setError(null);
+    setSignaturePositions([]);
+    await loadPdfDocument(file);
+  };
+
+  const loadPdfDocument = async (file: File) => {
+    setIsProcessing(true);
+    setIsPdfLoaded(false);
+    
+    try {
+      if (!window.pdfjsLib) {
+        throw new Error('PDF.js not loaded');
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = window.pdfjsLib.getDocument(arrayBuffer);
+      const pdf = await loadingTask.promise;
+      
+      setPdfDocument(pdf);
+      
+      // Load first page info
+      const pages: PdfPageInfo[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1 });
+        
+        pages.push({
+          width: viewport.width,
+          height: viewport.height,
+          scale: 1,
+          pageNumber: i
+        });
+      }
+      
+      setPdfPages(pages);
+      setCurrentPage(1);
+      setIsPdfLoaded(true);
+      
+      // Render first page
+      await renderPdfPage(1);
+    } catch (err) {
+      setError('Failed to load PDF document');
+      console.error('PDF loading error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+const renderPdfPage = async (pageNumber: number) => {
+  if (!pdfDocument || !canvasRef.current) return;
+
+  try {
+    const page = await pdfDocument.getPage(pageNumber);
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    
+    if (!context) return;
+
+    const viewport = page.getViewport({ scale: zoom });
+    
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+
+    // Clear canvas
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Render PDF page
+    const renderContext = {
+      canvasContext: context,
+      viewport: viewport
+    };
+
+    const renderTask = page.render(renderContext);
+    setCurrentRenderTask(renderTask); // Store the render task
+    
+    await renderTask.promise;
+    
+    // Render signatures for current page
+    renderSignatures();
+    
+    // Clear the render task after completion
+    setCurrentRenderTask(null);
+  } catch (err) {
+    console.error('Error rendering PDF page:', err);
+  }
+};
+
+  const renderSignatures = () => {
+    if (!canvasRef.current || !signatureImage) return;
+
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const currentPageSignatures = signaturePositions.filter(sig => sig.page === currentPage);
+    
+    currentPageSignatures.forEach((signature) => {
+      const img = new Image();
+      img.onload = () => {
+        context.save();
+        
+        // Apply transformations
+        const centerX = signature.x + signature.width / 2;
+        const centerY = signature.y + signature.height / 2;
+        
+        context.translate(centerX, centerY);
+        context.rotate((signature.rotation * Math.PI) / 180);
+        context.translate(-centerX, -centerY);
+        
+        // Draw signature
+        context.drawImage(img, signature.x, signature.y, signature.width, signature.height);
+        
+        // Draw selection outline if selected
+        if (selectedSignature === signature.id) {
+          context.strokeStyle = '#3b82f6';
+          context.lineWidth = 2;
+          context.setLineDash([5, 5]);
+          context.strokeRect(signature.x - 2, signature.y - 2, signature.width + 4, signature.height + 4);
+          
+          // Draw resize handles
+          drawResizeHandles(context, signature);
+        }
+        
+        context.restore();
+      };
+      img.src = signatureImage;
+    });
+  };
+
+  const drawResizeHandles = (context: CanvasRenderingContext2D, signature: SignaturePosition) => {
+    const handleSize = 8;
+    context.fillStyle = '#3b82f6';
+    context.setLineDash([]);
+    
+    // Corner handles
+    const corners = [
+      { x: signature.x - handleSize/2, y: signature.y - handleSize/2 }, // Top-left
+      { x: signature.x + signature.width - handleSize/2, y: signature.y - handleSize/2 }, // Top-right
+      { x: signature.x - handleSize/2, y: signature.y + signature.height - handleSize/2 }, // Bottom-left
+      { x: signature.x + signature.width - handleSize/2, y: signature.y + signature.height - handleSize/2 } // Bottom-right
+    ];
+    
+    corners.forEach(corner => {
+      context.fillRect(corner.x, corner.y, handleSize, handleSize);
+    });
+  };
+
+  const handleSignatureUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Signature image must be less than 10MB');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file for signature');
+      return;
+    }
+
+    setSignatureFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setSignatureImage(e.target?.result as string);
+      setError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const getMousePosition = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) return { x: 0, y: 0 };
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  };
+
+  const getSignatureAtPosition = (x: number, y: number): SignaturePosition | null => {
+    const currentPageSignatures = signaturePositions.filter(sig => sig.page === currentPage);
+    
+    for (let i = currentPageSignatures.length - 1; i >= 0; i--) {
+      const sig = currentPageSignatures[i];
+      if (x >= sig.x && x <= sig.x + sig.width && y >= sig.y && y <= sig.y + sig.height) {
+        return sig;
+      }
+    }
+    return null;
+  };
+
+  const getResizeHandle = (x: number, y: number, signature: SignaturePosition): string | null => {
+    const handleSize = 8;
+    const tolerance = 5;
+    
+    // Check corner handles
+    const handles = [
+      { name: 'nw', x: signature.x, y: signature.y },
+      { name: 'ne', x: signature.x + signature.width, y: signature.y },
+      { name: 'sw', x: signature.x, y: signature.y + signature.height },
+      { name: 'se', x: signature.x + signature.width, y: signature.y + signature.height }
+    ];
+    
+    for (const handle of handles) {
+      if (Math.abs(x - handle.x) < tolerance + handleSize/2 && 
+          Math.abs(y - handle.y) < tolerance + handleSize/2) {
+        return handle.name;
+      }
+    }
+    
+    return null;
+  };
+
+  const handleCanvasMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (!isPdfLoaded) return;
+    
+    const { x, y } = getMousePosition(e);
+    const signature = getSignatureAtPosition(x, y);
+    
+    if (signature) {
+      setSelectedSignature(signature.id);
+      
+      if (tool === 'resize') {
+        const handle = getResizeHandle(x, y, signature);
+        if (handle) {
+          setIsResizing(true);
+          setDragStartPos({ x, y });
+          return;
+        }
+      }
+      
+      if (tool === 'move') {
+        setIsDragging(true);
+        setDragStartPos({ x: x - signature.x, y: y - signature.y });
+      }
+    } else if (signatureImage) {
+      // Create new signature
+      const newSignature: SignaturePosition = {
+        id: Date.now().toString(),
+        x: Math.max(0, x - 50),
+        y: Math.max(0, y - 25),
+        width: 100,
+        height: 50,
+        page: currentPage,
+        rotation: 0
+      };
+      
+      setSignaturePositions([...signaturePositions, newSignature]);
+      setSelectedSignature(newSignature.id);
+    }
+  };
+
+  const handleCanvasMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (!selectedSignature) return;
+    
+    const { x, y } = getMousePosition(e);
+    const signature = signaturePositions.find(sig => sig.id === selectedSignature);
+    if (!signature) return;
+
+    if (isDragging && tool === 'move') {
+      const newX = Math.max(0, Math.min(x - dragStartPos.x, (canvasRef.current?.width || 0) - signature.width));
+      const newY = Math.max(0, Math.min(y - dragStartPos.y, (canvasRef.current?.height || 0) - signature.height));
+      
+      updateSignature(signature.id, { x: newX, y: newY });
+    } else if (isResizing && tool === 'resize') {
+      const deltaX = x - dragStartPos.x;
+      const deltaY = y - dragStartPos.y;
+      
+      const newWidth = Math.max(20, signature.width + deltaX);
+      const newHeight = Math.max(10, signature.height + deltaY);
+      
+      updateSignature(signature.id, { width: newWidth, height: newHeight });
+      setDragStartPos({ x, y });
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
+    setIsResizing(false);
+    setDragStartPos({ x: 0, y: 0 });
+  };
+
+  const updateSignature = (id: string, updates: Partial<SignaturePosition>) => {
+    setSignaturePositions(prev => 
+      prev.map(sig => 
+        sig.id === id ? { ...sig, ...updates } : sig
+      )
+    );
+  };
+
+  const removeSignature = (id: string) => {
+    setSignaturePositions(prev => prev.filter(sig => sig.id !== id));
+    if (selectedSignature === id) {
+      setSelectedSignature(null);
+    }
+  };
+
+  const rotateSignature = (id: string, degrees: number) => {
+    updateSignature(id, { rotation: (signaturePositions.find(s => s.id === id)?.rotation || 0) + degrees });
+  };
+
+  const changePage = async (pageNumber: number) => {
+    if (pageNumber < 1 || pageNumber > (pdfDocument?.numPages || 1)) return;
+    
+    setCurrentPage(pageNumber);
+    setSelectedSignature(null);
+    await renderPdfPage(pageNumber);
+  };
+
+  const handleZoomChange = async (newZoom: number) => {
+    setZoom(newZoom);
+    if (isPdfLoaded) {
+      await renderPdfPage(currentPage);
+    }
+  };
+
+  const downloadSignedPdf = async () => {
+    if (!pdfDocument || signaturePositions.length === 0) return;
+
+    setIsProcessing(true);
+    try {
+      // Create a canvas for the current page with signatures
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `signed_${pdfFile?.name.replace('.pdf', '')}_page_${currentPage}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+      });
+    } catch (err) {
+      setError('Failed to generate signed PDF');
+      console.error('PDF generation error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Re-render signatures when they change
+  useEffect(() => {
+    if (isPdfLoaded && !currentRenderTask) {
+      // Debounce signature rendering
+      const timeoutId = setTimeout(() => {
+        renderSignatures();
+      }, 50);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [signaturePositions, selectedSignature, isPdfLoaded, currentRenderTask]);
+
+  // Re-render when page changes
+  useEffect(() => {
+    if (isPdfLoaded && pdfDocument && !currentRenderTask) {
+      const timeoutId = setTimeout(() => {
+        renderPdfPage(currentPage);
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentPage, zoom, isPdfLoaded, pdfDocument, currentRenderTask]);
+
+  // Cleanup render task on unmount
+  useEffect(() => {
+    return () => {
+      if (currentRenderTask) {
+        currentRenderTask.promise.catch(() => {
+          // Ignore cleanup errors
+        });
+      }
+    };
+  }, []);
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-950 transition-all duration-700">
+      <main className="relative">
+        {/* Hero Section */}
+        <section className="pt-8 pb-6 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-6xl mx-auto text-center">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Advanced PDF Signature Tool
+              </span>
+            </div>
+            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
+              <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 dark:from-blue-400 dark:via-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
+                Professional PDF Signing
+              </span>
+            </h1>
+            <p className="text-lg text-gray-700 dark:text-gray-300 max-w-3xl mx-auto">
+              Upload PDFs, place and resize signatures with precision, then download your professionally signed documents
+            </p>
+          </div>
+        </section>
+
+        {/* Main Content */}
+        <section className="pb-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+                <p className="text-red-800 dark:text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+              {/* Controls Panel */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* PDF Upload */}
+                <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <FileText className="w-5 h-5 mr-2 text-blue-600" />
+                    PDF Document
+                  </h3>
+                  <button
+                    onClick={() => pdfInputRef.current?.click()}
+                    className="w-full py-3 px-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 transition-colors text-center"
+                  >
+                    <Upload className="w-6 h-6 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {pdfFile ? pdfFile.name : 'Upload PDF'}
+                    </p>
+                  </button>
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={handlePdfUpload}
+                    className="hidden"
+                  />
+                  {isPdfLoaded && pdfDocument && (
+                    <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                      {pdfDocument.numPages} page{pdfDocument.numPages > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+
+                {/* Signature Upload */}
+                <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <PenTool className="w-5 h-5 mr-2 text-purple-600" />
+                    Signature
+                  </h3>
+                  <button
+                    onClick={() => signatureInputRef.current?.click()}
+                    className="w-full py-3 px-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-purple-400 dark:hover:border-purple-500 transition-colors text-center"
+                  >
+                    <Upload className="w-6 h-6 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {signatureFile ? signatureFile.name : 'Upload Signature'}
+                    </p>
+                  </button>
+                  <input
+                    ref={signatureInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSignatureUpload}
+                    className="hidden"
+                  />
+                  {signatureImage && (
+                    <div className="mt-4">
+                      <img
+                        src={signatureImage}
+                        alt="Signature preview"
+                        className="w-full max-h-16 object-contain bg-gray-50 dark:bg-gray-800 rounded border p-2"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Tools */}
+                {isPdfLoaded && signatureImage && (
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tools</h3>
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        onClick={() => setTool('move')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+                          tool === 'move'
+                            ? 'bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200'
+                            : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        <Move className="w-4 h-4" />
+                        Move
+                      </button>
+                      <button
+                        onClick={() => setTool('resize')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+                          tool === 'resize'
+                            ? 'bg-purple-100 dark:bg-purple-900/50 border border-purple-300 dark:border-purple-700 text-purple-800 dark:text-purple-200'
+                            : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        <Square className="w-4 h-4" />
+                        Resize
+                      </button>
+                    </div>
+
+                    {/* Zoom Controls */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Zoom: {Math.round(zoom * 100)}%
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleZoomChange(Math.max(0.5, zoom - 0.25))}
+                          className="flex-1 py-2 px-3 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <ZoomOut className="w-4 h-4 mx-auto" />
+                        </button>
+                        <button
+                          onClick={() => handleZoomChange(1)}
+                          className="flex-1 py-2 px-3 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm"
+                        >
+                          100%
+                        </button>
+                        <button
+                          onClick={() => handleZoomChange(Math.min(3, zoom + 0.25))}
+                          className="flex-1 py-2 px-3 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <ZoomIn className="w-4 h-4 mx-auto" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Signature Controls */}
+                    {selectedSignature && (
+                      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Selected Signature</h4>
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => rotateSignature(selectedSignature, -90)}
+                              className="flex-1 py-1 px-2 text-xs bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-1"
+                            >
+                              <RotateCw className="w-3 h-3 transform rotate-180" />
+                              -90°
+                            </button>
+                            <button
+                              onClick={() => rotateSignature(selectedSignature, 90)}
+                              className="flex-1 py-1 px-2 text-xs bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-1"
+                            >
+                              <RotateCw className="w-3 h-3" />
+                              +90°
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => removeSignature(selectedSignature)}
+                            className="w-full py-1 px-2 text-xs bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200 rounded hover:bg-red-200 dark:hover:bg-red-900/70 transition-colors flex items-center justify-center gap-1"
+                          >
+                            <X className="w-3 h-3" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Signature List */}
+                {signaturePositions.length > 0 && (
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                      Signatures ({signaturePositions.length})
+                    </h3>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {signaturePositions.map((sig, index) => (
+                        <div
+                          key={sig.id}
+                          onClick={() => {
+                            setSelectedSignature(sig.id);
+                            changePage(sig.page);
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
+                            selectedSignature === sig.id
+                              ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                              : 'bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            #{index + 1} - Page {sig.page}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeSignature(sig.id);
+                            }}
+                            className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Download */}
+                {signaturePositions.length > 0 && (
+                  <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4">
+                    <button
+                      onClick={downloadSignedPdf}
+                      disabled={isProcessing}
+                      className="w-full py-3 px-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg font-medium hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      {isProcessing ? 'Processing...' : 'Download Signed PDF'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* PDF Viewer */}
+              <div className="lg:col-span-4">
+                <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  {/* PDF Header */}
+                  <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      PDF Viewer
+                      {tool === 'move' && <Move className="w-4 h-4 text-blue-600" />}
+                      {tool === 'resize' && <Square className="w-4 h-4 text-purple-600" />}
+                    </h3>
+                    
+                    {isPdfLoaded && pdfDocument && pdfDocument.numPages > 1 && (
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => changePage(currentPage - 1)}
+                          disabled={currentPage === 1}
+                          className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <RotateCw className="w-4 h-4 transform rotate-180" />
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400 min-w-0">
+                          Page {currentPage} of {pdfDocument.numPages}
+                        </span>
+                        <button
+                          onClick={() => changePage(currentPage + 1)}
+                          disabled={currentPage === pdfDocument.numPages}
+                          className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <RotateCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PDF Canvas Container */}
+                  <div
+                    ref={containerRef}
+                    className="p-4 overflow-auto max-h-[700px] bg-gray-50 dark:bg-gray-800"
+                    style={{ minHeight: '500px' }}
+                  >
+                    {isPdfLoaded ? (
+                      <div className="flex justify-center">
+                        <div className="relative bg-white shadow-lg">
+                          <canvas
+                            ref={canvasRef}
+                            onMouseDown={handleCanvasMouseDown}
+                            onMouseMove={handleCanvasMouseMove}
+                            onMouseUp={handleCanvasMouseUp}
+                            onMouseLeave={handleCanvasMouseUp}
+                            className={`border border-gray-300 dark:border-gray-600 ${
+                              signatureImage ? 'cursor-crosshair' : 'cursor-default'
+                            } ${tool === 'move' ? 'cursor-move' : ''} ${tool === 'resize' ? 'cursor-nw-resize' : ''}`}
+                            style={{ maxWidth: '100%', height: 'auto' }}
+                          />
+                          {!signatureImage && isPdfLoaded && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white text-sm rounded">
+                              Upload a signature image to start placing signatures
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                        {isProcessing ? (
+                          <div className="flex flex-col items-center gap-4">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                            <span className="text-lg">Loading PDF document...</span>
+                            <p className="text-sm text-center max-w-md">
+                              Please wait while we process your PDF. Large files may take a moment to load.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="text-center">
+                            <FileText className="w-20 h-20 mx-auto mb-6 text-gray-300" />
+                            <h4 className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              No PDF Loaded
+                            </h4>
+                            <p className="text-gray-500 dark:text-gray-400 mb-4">
+                              Upload a PDF document to begin signing
+                            </p>
+                            <button
+                              onClick={() => pdfInputRef.current?.click()}
+                              className="inline-flex items-center gap-2 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                              <Upload className="w-4 h-4" />
+                              Upload PDF
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Instructions */}
+                  {isPdfLoaded && signatureImage && (
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20">
+                      <div className="flex items-start gap-3">
+                        <MousePointer className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-blue-800 dark:text-blue-200">
+                          <p className="font-medium mb-1">How to use:</p>
+                          <ul className="space-y-1 text-blue-700 dark:text-blue-300">
+                            <li>• <strong>Click</strong> anywhere on the PDF to place a new signature</li>
+                            <li>• <strong>Move tool:</strong> Click and drag signatures to reposition them</li>
+                            <li>• <strong>Resize tool:</strong> Click and drag corner handles to resize signatures</li>
+                            <li>• Use the rotation buttons in the sidebar to rotate selected signatures</li>
+                            <li>• Navigate between pages using the page controls above</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
