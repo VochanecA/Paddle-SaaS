@@ -6,7 +6,8 @@
 :root {
   --background: #ffffff;
   --background-alt: #f9fafb;
-  --foreground: #171717;
+  /* --foreground: #171717; */
+  --foreground: #666666;
   --accent: #3b82f6; /* Blue-500 */
   --accent-alt: #4f46e5; /* Indigo-600 */
   --error: #ef4444; /* Red-500 */
