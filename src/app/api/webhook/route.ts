@@ -55,49 +55,7 @@ interface ExtendedTransactionData extends TransactionData {
   };
 }
 
-// Get customer email from Paddle API
-// Get customer email from Paddle API - OPTIMIZOVANO
-async function getCustomerEmailFromPaddle(customerId: string): Promise<string | null> {
-  try {
-    const paddleApiKey = process.env.PADDLE_API_KEY;
-    if (!paddleApiKey) {
-      console.log('PADDLE_API_KEY not set, skipping API call');
-      return null;
-    }
-
-    const response = await fetch(`https://api.paddle.com/customers/${customerId}`, {
-      headers: {
-        'Authorization': `Bearer ${paddleApiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (response.status === 404) {
-      console.log(`Customer ${customerId} not found in Paddle API yet (new customer)`);
-      return null;
-    }
-
-    if (response.ok) {
-      const customerData = await response.json();
-      const email = customerData.data?.email;
-      if (email) {
-        console.log(`✅ Found customer email from Paddle API: ${email}`);
-        return email;
-      } else {
-        console.log(`❌ Customer found in Paddle API but no email returned`);
-        return null;
-      }
-    } else {
-      console.error(`Paddle API error: ${response.status}`, await response.text());
-      return null;
-    }
-  } catch (error) {
-    console.error('Error fetching customer from Paddle API:', error);
-    return null;
-  }
-}
-
-// Ensure customer exists - OPTIMIZOVANO ZA OBA SLUČAJA
+// Ensure customer exists - POJEDOSTAVLJENO
 async function ensureCustomerExists(
   supabase: ReturnType<typeof createClient>, 
   customerId: string, 
@@ -114,70 +72,26 @@ async function ensureCustomerExists(
     return;
   }
 
-  // POSTOJEĆI CUSTOMER - POKUŠAJ AŽURIRATI EMAIL
-  if (existingCustomer) {
-    const isPlaceholderEmail = existingCustomer.email === 'pending@customer.com' || 
-                              existingCustomer.email === 'pending-email@customer.com' ||
-                              existingCustomer.email.includes('pending') ||
-                              existingCustomer.email.includes('unknown');
+  if (!existingCustomer) {
+    console.log(`🔄 Creating initial customer record: ${customerId}`);
+    
+    const { error: insertError } = await supabase
+      .from('customers')
+      .insert({
+        customer_id: customerId,
+        email: 'pending@customer.com', // Privremeni email
+        created_at: occurredAt,
+        updated_at: occurredAt,
+      } as Database['public']['Tables']['customers']['Insert']);
 
-    if (isPlaceholderEmail) {
-      console.log(`🔄 Customer ${customerId} has placeholder email (${existingCustomer.email}), trying to fetch real email...`);
-      const paddleEmail = await getCustomerEmailFromPaddle(customerId);
-      
-      if (paddleEmail && paddleEmail !== existingCustomer.email) {
-        console.log(`🔄 Updating customer ${customerId} email from ${existingCustomer.email} to ${paddleEmail}`);
-        
-        const { error: updateError } = await supabase
-          .from('customers')
-          .update({ 
-            email: paddleEmail,
-            updated_at: occurredAt
-          } as Database['public']['Tables']['customers']['Update'])
-          .eq('customer_id', customerId);
-
-        if (updateError) {
-          console.error('Error updating customer email:', updateError.message);
-        } else {
-          console.log(`✅ Successfully updated customer ${customerId} with email: ${paddleEmail}`);
-        }
-      } else if (!paddleEmail) {
-        console.log(`⏳ Customer ${customerId} not yet available in Paddle API (likely new customer), keeping placeholder email`);
-      }
+    if (insertError) {
+      console.error('Error creating initial customer record:', insertError.message);
     } else {
-      console.log(`✅ Customer ${customerId} already has email: ${existingCustomer.email}`);
+      console.log(`✅ Created initial customer record: ${customerId}`);
     }
-    return;
-  }
-
-  // NOVI CUSTOMER - KREIRAJ SA PADDLE EMAILOM ILI PLACEHOLDEROM
-  console.log(`🔄 Creating new customer record: ${customerId}`);
-  
-  let customerEmail = 'pending@customer.com';
-  const paddleEmail = await getCustomerEmailFromPaddle(customerId);
-  
-  if (paddleEmail) {
-    customerEmail = paddleEmail;
-    console.log(`✅ Using email from Paddle API for new customer: ${customerEmail}`);
-  } else {
-    console.log(`⏳ New customer ${customerId} not yet in Paddle API, using placeholder email`);
-  }
-
-  const { error: insertError } = await supabase
-    .from('customers')
-    .insert({
-      customer_id: customerId,
-      email: customerEmail,
-      created_at: occurredAt,
-      updated_at: occurredAt,
-    } as Database['public']['Tables']['customers']['Insert']);
-
-  if (insertError) {
-    console.error('Error creating customer record:', insertError.message);
-  } else {
-    console.log(`✅ Successfully created customer ${customerId} with email: ${customerEmail}`);
   }
 }
+
 // Verify Paddle webhook signature
 function verifyPaddleSignature(rawBody: string, signature: string, secret: string): boolean {
   if (signature.includes('ts=') && signature.includes('h1=')) {
@@ -264,43 +178,46 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const event: PaddleWebhookEvent = JSON.parse(body);
     console.log(`Received Paddle webhook: ${event.event_type} (ID: ${event.event_id})`);
 
-    // DEBUG: Log full event data
-    console.log('Event data:', JSON.stringify(event.data, null, 2));
+    // DEBUG: Log full event data for customer events
+    if (event.event_type.includes('customer')) {
+      console.log('🔍 FULL customer event data:', JSON.stringify(event.data, null, 2));
+    }
 
     switch (event.event_type) {
-      // Customer events - RIJETKO SE DEŠAVAJU U PRODUKCIJI
+      // Customer events - OVO JE KLJUČNO ZA EMAIL
       case 'customer.created':
       case 'customer.updated': {
         const customerData = event.data as CustomerData;
         
-        console.log(`🔄 Processing customer event: ${customerData.id}`);
+        console.log(`🔄 Processing ${event.event_type}: ${customerData.id}`);
+        console.log(`📧 Email from webhook: ${customerData.email}`);
+        console.log(`👤 Name from webhook: ${customerData.name}`);
         
         if (customerData.email) {
-          console.log(`✅ Customer event contains email: ${customerData.email}`);
-          
+          const payload: Database['public']['Tables']['customers']['Insert'] = {
+            customer_id: customerData.id,
+            email: customerData.email,
+            created_at: customerData.created_at ?? event.occurred_at,
+            updated_at: customerData.updated_at ?? event.occurred_at,
+          };
+
           const { error } = await supabase
             .from('customers')
-            .upsert({
-              customer_id: customerData.id,
-              email: customerData.email,
-              created_at: customerData.created_at ?? event.occurred_at,
-              updated_at: customerData.updated_at ?? event.occurred_at,
-            } as Database['public']['Tables']['customers']['Insert'], 
-            { onConflict: 'customer_id' });
+            .upsert(payload, { onConflict: 'customer_id' });
           
           if (error) {
-            console.error(`Error on ${event.event_type}:`, error.message);
+            console.error(`❌ Error on ${event.event_type}:`, error.message);
           } else {
             console.log(`✅ Successfully processed customer ${customerData.id} with email: ${customerData.email}`);
           }
         } else {
-          console.log(`❌ Customer event does not contain email, using ensureCustomerExists`);
+          console.log(`❌ ${event.event_type} does not contain email, using ensureCustomerExists`);
           await ensureCustomerExists(supabase, customerData.id, event.occurred_at);
         }
         break;
       }
 
-      // Transaction events - GLAVNI IZVOR CUSTOMERA
+      // Transaction events - STIŽU PRVI, KREIRAJU CUSTOMERA BEZ EMAILA
       case 'transaction.created':
       case 'transaction.updated':
       case 'transaction.billed':
@@ -312,7 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         
         console.log(`💳 Processing transaction: ${data.id} for customer: ${data.customer_id}`);
         
-        // Ovo će pokušati dobiti email iz Paddle API-a
+        // Kreiraj customer bez emaila (bit će ažuriran kasnije sa customer.updated)
         await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
         const amount = calculateTransactionAmount(data);
@@ -331,9 +248,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         const { error } = await supabase.from('transactions').upsert(payload, { onConflict: 'transaction_id' });
         if (error) {
-          console.error(`Error on ${event.event_type}:`, error.message);
+          console.error(`❌ Error on ${event.event_type}:`, error.message);
         } else {
           console.log(`✅ Successfully processed transaction ${data.id}`);
+        }
+        break;
+      }
+
+      // Address events
+      case 'address.created':
+      case 'address.updated': {
+        const data = event.data as AddressData;
+        
+        console.log(`🏠 Processing address for customer: ${data.customer_id}`);
+        
+        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
+        
+        const payload: CustomerUpdatePayload = { 
+          updated_at: event.occurred_at 
+        };
+        
+        const { error } = await supabase
+          .from('customers')
+          .update(payload as Database['public']['Tables']['customers']['Update'])
+          .eq('customer_id', data.customer_id);
+        
+        if (error) {
+          console.error(`❌ Error updating customer due to ${event.event_type}:`, error.message);
         }
         break;
       }
@@ -345,6 +286,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         
         console.log(`🔄 Processing subscription: ${data.id} for customer: ${data.customer_id}`);
         
+        // Customer bi trebao već postojati (sa ili bez emaila)
         await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
         const payload: Database['public']['Tables']['subscriptions']['Insert'] = {
@@ -365,7 +307,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         const { error } = await supabase.from('subscriptions').upsert(payload, { onConflict: 'subscription_id' });
         if (error) {
-          console.error(`Error on ${event.event_type}:`, error.message);
+          console.error(`❌ Error on ${event.event_type}:`, error.message);
         } else {
           console.log(`✅ Successfully processed subscription ${data.id}`);
         }
@@ -425,20 +367,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           .eq('subscription_id', data.id);
 
         if (error) {
-          console.error(`Error updating subscription ${data.id} with status ${normalizedStatus}:`, error.message);
+          console.error(`❌ Error updating subscription ${data.id} with status ${normalizedStatus}:`, error.message);
         } else {
           console.log(`✅ Successfully updated subscription ${data.id} with status ${normalizedStatus}`);
         }
         break;
       }
 
-      case 'address.created':
-      case 'address.updated':
+      // Business events
       case 'business.created':
       case 'business.updated': {
-        const data = event.data as AddressData | BusinessData;
-        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
-        
+        const data = event.data as BusinessData;
         const payload: CustomerUpdatePayload = { 
           updated_at: event.occurred_at 
         };
@@ -448,7 +387,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           .update(payload as Database['public']['Tables']['customers']['Update'])
           .eq('customer_id', data.customer_id);
         
-        if (error) console.error(`Error updating customer due to ${event.event_type}:`, error.message);
+        if (error) console.error(`❌ Error updating customer due to ${event.event_type}:`, error.message);
         break;
       }
 
