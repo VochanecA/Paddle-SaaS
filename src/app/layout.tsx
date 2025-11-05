@@ -7,6 +7,7 @@ import { Providers } from '@/components/Providers';
 import { Navigation } from '@/components/Navigation';
 import { ToastProvider } from '@/components/ToastProvider';
 import Footer from '@/components/Footer';
+import { Analytics } from "@vercel/analytics/next"
 
 // Initialize Inter font with subsets and display settings
 const inter = Inter({ 
@@ -166,6 +167,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Navigation />
             <main className="flex-grow">
               {children}
+                 <Analytics />
             </main>
             <Footer />
           </ToastProvider>
