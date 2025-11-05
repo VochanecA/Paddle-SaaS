@@ -32,6 +32,28 @@ interface CustomerUpdatePayload {
   updated_at: string;
 }
 
+// Extended interfaces for Paddle data
+interface ExtendedSubscriptionData extends SubscriptionData {
+  started_at?: string;
+  paused_at?: string;
+  ends_at?: string;
+}
+
+interface ExtendedTransactionData extends TransactionData {
+  totals?: {
+    grand_total?: {
+      amount: string;
+    };
+  };
+  details?: {
+    totals?: {
+      grand_total?: {
+        amount: string;
+      };
+    };
+  };
+}
+
 // Ensure customer exists
 async function ensureCustomerExists(
   supabase: ReturnType<typeof createClient>, 
@@ -112,6 +134,23 @@ function verifyPaddleSignature(rawBody: string, signature: string, secret: strin
   return false;
 }
 
+// Helper function to safely calculate transaction amount
+function calculateTransactionAmount(data: TransactionData): number | null {
+  const extendedData = data as ExtendedTransactionData;
+  
+  // Try totals.grand_total first (Paddle V2 structure)
+  if (extendedData.totals?.grand_total?.amount) {
+    return parseInt(extendedData.totals.grand_total.amount, 10);
+  }
+  
+  // Fallback to details.totals.grand_total
+  if (extendedData.details?.totals?.grand_total?.amount) {
+    return parseInt(extendedData.details.totals.grand_total.amount, 10);
+  }
+  
+  return null;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = createClient();
 
@@ -142,22 +181,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'customer.created':
       case 'customer.updated': {
         const customerData = event.data as CustomerData;
-const payload: Database['public']['Tables']['customers']['Insert'] = {
-  customer_id: customerData.id,
-  email: customerData.email ?? '',
-  created_at: event.occurred_at, // Use webhook timestamp
-  updated_at: event.occurred_at, // Fallback to webhook timestamp
-};
+        const payload: Database['public']['Tables']['customers']['Insert'] = {
+          customer_id: customerData.id,
+          email: customerData.email ?? '',
+          created_at: customerData.created_at ?? event.occurred_at,
+          updated_at: customerData.updated_at ?? event.occurred_at,
+        };
 
         const { error } = await supabase.from('customers').upsert(payload, { onConflict: 'customer_id' });
         if (error) console.error(`Error on ${event.event_type}:`, error.message);
         break;
       }
 
-      // Subscription events
+      // Subscription events - SADA ĆE RADITI JER KOLONE POSTOJE
       case 'subscription.created':
       case 'subscription.activated': {
-        const data = event.data as SubscriptionData;
+        const data = event.data as ExtendedSubscriptionData;
         await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
         const payload: Database['public']['Tables']['subscriptions']['Insert'] = {
@@ -171,7 +210,7 @@ const payload: Database['public']['Tables']['customers']['Insert'] = {
           customer_id: data.customer_id,
           created_at: data.created_at ?? event.occurred_at,
           updated_at: data.updated_at ?? event.occurred_at,
-          started_at: new Date().toISOString(),
+          started_at: data.started_at ?? new Date().toISOString(),
           paused_at: null,
           canceled_at: null,
         };
@@ -187,7 +226,7 @@ const payload: Database['public']['Tables']['customers']['Insert'] = {
       case 'subscription.paused':
       case 'subscription.resumed':
       case 'subscription.canceled': {
-        const data = event.data as SubscriptionData;
+        const data = event.data as ExtendedSubscriptionData;
         await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
         const now = new Date().toISOString();
@@ -212,19 +251,19 @@ const payload: Database['public']['Tables']['customers']['Insert'] = {
           payload.product_id = data.items[0].price.product_id;
         }
 
-        // Update timestamps according to status
+        // Update timestamps according to status - SADA ĆE RADITI
         switch (normalizedStatus) {
           case 'active':
           case 'trialing':
-            payload.started_at = payload.started_at ?? now;
+            payload.started_at = data.started_at ?? now;
             payload.paused_at = null;
             payload.canceled_at = null;
             break;
           case 'paused':
-            payload.paused_at = now;
+            payload.paused_at = data.paused_at ?? now;
             break;
           case 'canceled':
-            payload.canceled_at = now;
+            payload.canceled_at = data.ends_at ?? now;
             break;
         }
 
@@ -233,7 +272,11 @@ const payload: Database['public']['Tables']['customers']['Insert'] = {
           .update(payload as Database['public']['Tables']['subscriptions']['Update'])
           .eq('subscription_id', data.id);
 
-        if (error) console.error(`Error updating subscription ${data.id} with status ${normalizedStatus}:`, error.message);
+        if (error) {
+          console.error(`Error updating subscription ${data.id} with status ${normalizedStatus}:`, error.message);
+        } else {
+          console.log(`Successfully updated subscription ${data.id} with status ${normalizedStatus}`);
+        }
         break;
       }
 
@@ -245,12 +288,10 @@ const payload: Database['public']['Tables']['customers']['Insert'] = {
       case 'transaction.completed':
       case 'transaction.canceled':
       case 'transaction.ready': {
-        const data = event.data as TransactionData;
+        const data = event.data as ExtendedTransactionData;
         await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
-        const amount = data.details?.totals?.grand_total
-          ? parseInt(data.details.totals.grand_total.amount, 10)
-          : null;
+        const amount = calculateTransactionAmount(data);
 
         const payload: Database['public']['Tables']['transactions']['Insert'] = {
           transaction_id: data.id,
