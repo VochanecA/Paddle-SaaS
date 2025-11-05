@@ -189,9 +189,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'customer.updated': {
         const customerData = event.data as CustomerData;
         
-        console.log(`🔄 Processing ${event.event_type}: ${customerData.id}`);
-        console.log(`📧 Email from webhook: ${customerData.email}`);
-        console.log(`👤 Name from webhook: ${customerData.name}`);
+
         
         if (customerData.email) {
           const payload: Database['public']['Tables']['customers']['Insert'] = {
