@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
-//import type { Database } from '@/lib/types';
 
 interface ManageSubscriptionRequest {
   subscriptionId: string;
@@ -54,13 +53,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ? 'https://sandbox-api.paddle.com'
       : 'https://api.paddle.com';
 
-    // Log request details for debugging
-    console.log('Paddle Request:', {
-      url: `${paddleBaseUrl}/subscriptions/${subscriptionId}/${action}`,
-      headers: { Authorization: `Bearer ${paddleApiKey}` },
-      body: { subscriptionId, action, immediate },
-    });
-
     // Pass the cookies instance to your Supabase client
     const supabase = createClient(cookies());
 
@@ -96,25 +88,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Perform the action with Paddle API
+    // PADDLE V2 KORISTI DRUGAČIJE ENDPOINT-E!
     let paddleUrl: string;
+    const paddleMethod: string = 'PATCH'; // Paddle V2 koristi PATCH za update
     let paddleBody: Record<string, unknown> = {};
 
     switch (action) {
       case 'pause':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/pause`;
-        paddleBody = {};
+        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
+        paddleBody = {
+          status: 'paused' // Paddle V2: pause se radi preko status update
+        };
         break;
 
       case 'cancel':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/cancel`;
+        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
+          status: 'canceled',
           effective_from: immediate ? 'immediately' : 'next_billing_period',
         };
         break;
 
       case 'resume':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/resume`;
-        paddleBody = {};
+        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
+        paddleBody = {
+          status: 'active' // Paddle V2: resume se radi preko status update
+        };
         break;
 
       default:
@@ -124,13 +123,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
     }
 
+    // Log request details for debugging
+    console.log('Paddle Request Details:', {
+      url: paddleUrl,
+      method: paddleMethod,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${paddleApiKey}` 
+      },
+      body: paddleBody,
+      subscriptionId,
+      action,
+      immediate
+    });
+
     let response;
     try {
       response = await fetch(paddleUrl, {
-        method: 'POST',
+        method: paddleMethod,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${paddleApiKey}`,
+          'Authorization': `Bearer ${paddleApiKey}`,
         },
         body: JSON.stringify(paddleBody),
       });
@@ -139,7 +152,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         error: fetchError,
         requestUrl: paddleUrl,
         requestBody: paddleBody,
-        headers: { Authorization: `Bearer ${paddleApiKey}` },
+        subscriptionId,
+        action
       });
       return NextResponse.json(
         {
@@ -150,32 +164,60 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const responseData: PaddleApiResponse = await response.json();
+    const responseText = await response.text();
+    let responseData: PaddleApiResponse;
 
-    if (!response.ok) {
-      console.error('Paddle API error:', {
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      console.error('JSON parse error:', {
+        responseText,
         status: response.status,
-        responseData,
-        requestUrl: paddleUrl,
-        requestBody: paddleBody,
-        headers: { Authorization: `Bearer ${paddleApiKey}` },
+        statusText: response.statusText
       });
       return NextResponse.json(
         {
-          error: 'Failed to manage subscription with Paddle',
-          details: responseData.error?.detail || `HTTP ${response.status}`,
+          error: 'Invalid response from Paddle API',
+          details: 'Could not parse JSON response',
+          responseText
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!response.ok) {
+      console.error('Paddle API error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        responseData,
+        requestUrl: paddleUrl,
+        requestBody: paddleBody,
+        subscriptionId,
+        action
+      });
+      
+      return NextResponse.json(
+        {
+          error: `Failed to ${action} subscription with Paddle`,
+          details: responseData.error?.detail || responseData.error?.code || `HTTP ${response.status}: ${response.statusText}`,
+          paddle_error: responseData.error,
           request_id: responseData.meta?.request_id || 'unknown',
         },
         { status: response.status }
       );
     }
 
-    console.log(`Subscription ${action} successful:`, subscriptionId);
+    console.log(`✅ Subscription ${action} successful:`, {
+      subscriptionId,
+      responseData,
+      request_id: responseData.meta?.request_id
+    });
 
     return NextResponse.json({
       success: true,
       message: `Subscription ${action} successful`,
       data: responseData.data,
+      request_id: responseData.meta?.request_id
     });
 
   } catch (error: unknown) {
@@ -190,7 +232,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (error instanceof Error) {
       return NextResponse.json(
-        { error: 'Internal server error', details: error.message },
+        { 
+          error: 'Internal server error', 
+          details: error.message,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        },
         { status: 500 }
       );
     }
