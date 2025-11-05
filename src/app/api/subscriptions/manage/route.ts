@@ -39,7 +39,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Koristite PADDLE_API_KEY umjesto PADDLE_SECRET_KEY
+    // KORISTITE PRAVI SECRET KEY
     const paddleApiKey = process.env.PADDLE_API_KEY;
     if (!paddleApiKey) {
       console.error('PADDLE_API_KEY environment variable is not set');
@@ -49,15 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Publishable key check (za frontend)
-    const paddlePublishableKey = process.env.NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY;
-    if (!paddlePublishableKey) {
-      console.error('NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY environment variable is not set');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
+    console.log('🔑 Using API Key:', paddleApiKey.substring(0, 20) + '...');
 
     const paddleBaseUrl = process.env.NEXT_PUBLIC_PADDLE_ENV === 'sandbox'
       ? 'https://sandbox-api.paddle.com'
@@ -97,21 +89,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 });
     }
 
-    // Perform the action with Paddle API
-    let paddleUrl: string;
-    const paddleMethod: string = 'PATCH';
+    // Probajte različite Paddle V2 endpoint-e
+    const paddleMethod = 'PATCH';
+    const paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
+
     let paddleBody: Record<string, unknown> = {};
 
     switch (action) {
       case 'pause':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
-        paddleBody = {
-          paused: true
-        };
+        paddleBody = { paused: true };
         break;
 
       case 'cancel':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
           status: 'canceled',
           effective_from: immediate ? 'immediately' : 'next_billing_period',
@@ -119,10 +108,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         break;
 
       case 'resume':
-        paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
-        paddleBody = {
-          paused: false
-        };
+        paddleBody = { paused: false };
         break;
 
       default:
@@ -133,18 +119,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Log request details for debugging
-    console.log('Paddle Request Details:', {
+    console.log('🚀 Paddle API Request:', {
       url: paddleUrl,
       method: paddleMethod,
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${paddleApiKey}` 
-      },
       body: paddleBody,
       subscriptionId,
       action,
       immediate,
-      api_key_prefix: paddleApiKey.substring(0, 10) + '...'
+      api_key: paddleApiKey.substring(0, 10) + '...'
     });
 
     let response;
@@ -158,13 +140,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         body: JSON.stringify(paddleBody),
       });
     } catch (fetchError) {
-      console.error('Fetch error:', {
-        error: fetchError,
-        requestUrl: paddleUrl,
-        requestBody: paddleBody,
-        subscriptionId,
-        action
-      });
+      console.error('Fetch error:', fetchError);
       return NextResponse.json(
         {
           error: 'Failed to connect to Paddle API',
@@ -180,11 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       responseData = responseText ? JSON.parse(responseText) : {};
     } catch (parseError) {
-      console.error('JSON parse error:', {
-        responseText,
-        status: response.status,
-        statusText: response.statusText
-      });
+      console.error('JSON parse error:', responseText);
       return NextResponse.json(
         {
           error: 'Invalid response from Paddle API',
@@ -196,20 +168,85 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!response.ok) {
-      console.error('Paddle API error response:', {
+      console.error('❌ Paddle API Error:', {
         status: response.status,
-        statusText: response.statusText,
-        responseData,
-        requestUrl: paddleUrl,
-        requestBody: paddleBody,
-        subscriptionId,
-        action
+        error: responseData.error,
+        url: paddleUrl,
+        method: paddleMethod
       });
-      
+
+      // Ako PATCH ne radi, probajte sa POST i specifičnim endpointima
+      if (response.status === 403 || response.status === 404) {
+        console.log('🔄 Trying alternative Paddle V2 endpoints...');
+        
+        let altUrl: string;
+        const altMethod = 'POST';
+        let altBody: Record<string, unknown> = {};
+
+        switch (action) {
+          case 'pause':
+            altUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/pause`;
+            altBody = {};
+            break;
+          case 'cancel':
+            altUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/cancel`;
+            altBody = {
+              effective_from: immediate ? 'immediately' : 'next_billing_period',
+            };
+            break;
+          case 'resume':
+            altUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}/resume`;
+            altBody = {};
+            break;
+          default:
+            altUrl = paddleUrl;
+            altBody = paddleBody;
+        }
+
+        console.log('🔄 Alternative request:', { altUrl, altMethod, altBody });
+
+        const altResponse = await fetch(altUrl, {
+          method: altMethod,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${paddleApiKey}`,
+          },
+          body: JSON.stringify(altBody),
+        });
+
+        const altResponseText = await altResponse.text();
+        const altResponseData = altResponseText ? JSON.parse(altResponseText) : {};
+
+        if (!altResponse.ok) {
+          console.error('❌ Alternative endpoint also failed:', {
+            status: altResponse.status,
+            error: altResponseData.error
+          });
+          
+          return NextResponse.json(
+            {
+              error: `Failed to ${action} subscription with Paddle`,
+              details: altResponseData.error?.detail || `HTTP ${altResponse.status}`,
+              paddle_error: altResponseData.error,
+              request_id: altResponseData.meta?.request_id || 'unknown',
+            },
+            { status: altResponse.status }
+          );
+        }
+
+        console.log(`✅ Subscription ${action} successful via alternative endpoint`);
+        return NextResponse.json({
+          success: true,
+          message: `Subscription ${action} successful`,
+          data: altResponseData.data,
+          request_id: altResponseData.meta?.request_id
+        });
+      }
+
       return NextResponse.json(
         {
           error: `Failed to ${action} subscription with Paddle`,
-          details: responseData.error?.detail || responseData.error?.code || `HTTP ${response.status}: ${response.statusText}`,
+          details: responseData.error?.detail || `HTTP ${response.status}`,
           paddle_error: responseData.error,
           request_id: responseData.meta?.request_id || 'unknown',
         },
@@ -217,11 +254,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    console.log(`✅ Subscription ${action} successful:`, {
-      subscriptionId,
-      responseData,
-      request_id: responseData.meta?.request_id
-    });
+    console.log(`✅ Subscription ${action} successful:`, responseData.data);
 
     return NextResponse.json({
       success: true,
@@ -232,27 +265,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   } catch (error: unknown) {
     console.error('Subscription management error:', error);
-
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: 'Invalid JSON in request body' },
-        { status: 400 }
-      );
-    }
-
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { 
-          error: 'Internal server error', 
-          details: error.message,
-          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error', 
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
