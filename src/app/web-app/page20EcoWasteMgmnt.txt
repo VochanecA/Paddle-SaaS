@@ -610,3 +610,153 @@ Focus on providing personalized advice based on the user's waste patterns. Sugge
     </div>
   );
 }
+
+
+api za ovo:
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
+
+interface WasteEntryRequest {
+  date: string;
+  category: string;
+  amount: number;
+  unit: string;
+  description?: string;
+  userId: string;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const cookieStore = cookies();
+    const supabase = createClient(cookieStore);
+    
+    // Verify the authenticated user matches the requested user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user || user.id !== userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Fetch user's waste entries
+    const { data: wasteEntries, error } = await supabase
+      .from('waste_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching waste entries:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch waste entries' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(wasteEntries);
+  } catch (error) {
+    console.error('Error in GET /api/waste-entries:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const cookieStore = cookies();
+    const supabase = createClient(cookieStore);
+    
+    // Verify authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const body: WasteEntryRequest = await request.json();
+    
+    // Validate required fields
+    if (!body.date || !body.category || body.amount === undefined || !body.unit) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Verify the user ID matches the authenticated user
+    if (body.userId !== user.id) {
+      return NextResponse.json(
+        { error: 'User ID mismatch' },
+        { status: 403 }
+      );
+    }
+
+    // Insert the waste entry
+    const { data: wasteEntry, error: insertError } = await supabase
+      .from('waste_entries')
+      .insert({
+        user_id: user.id,
+        date: body.date,
+        category: body.category,
+        amount: body.amount,
+        unit: body.unit,
+        description: body.description || null,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error inserting waste entry:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to save waste entry' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(wasteEntry);
+  } catch (error) {
+    console.error('Error in POST /api/waste-entries:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+API Route: src/app/api/waste-entries/route.ts
+
+i sql za supabase:
+
+CREATE TABLE waste_entries (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('plastic', 'paper', 'glass', 'metal', 'organic', 'electronic', 'other')),
+  amount DECIMAL NOT NULL,
+  unit TEXT NOT NULL DEFAULT 'kg',
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER

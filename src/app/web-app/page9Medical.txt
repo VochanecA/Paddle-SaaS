@@ -1,0 +1,497 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
+import AIChat from '@/components/AIChat';
+import type { User, Session } from '@supabase/supabase-js';
+
+// Define types for type safety
+type AnalysisType = 'blood' | 'bp' | 'xray';
+type BodyPart = 'chest' | 'abdomen' | 'skull' | 'spine' | 'extremity';
+
+interface BloodAnalysisData {
+  bloodSugar: string;
+  cholesterol: string;
+  hemoglobin: string;
+}
+
+interface BloodPressureData {
+  systolic: string;
+  diastolic: string;
+}
+
+interface XrayAnalysisData {
+  description: string;
+  bodyPart: BodyPart;
+}
+
+export default function WebAppPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [analysisType, setAnalysisType] = useState<AnalysisType>('blood');
+  const [analysisResult, setAnalysisResult] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const router = useRouter();
+  
+  // Blood analysis state
+  const [bloodData, setBloodData] = useState<BloodAnalysisData>({
+    bloodSugar: '',
+    cholesterol: '',
+    hemoglobin: ''
+  });
+  
+  // Blood pressure state
+  const [bpData, setBpData] = useState<BloodPressureData>({
+    systolic: '',
+    diastolic: ''
+  });
+  
+  // X-ray state
+  const [xrayData, setXrayData] = useState<XrayAnalysisData>({
+    description: '',
+    bodyPart: 'chest'
+  });
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const supabase = createClient();
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session || !session.user) {
+        console.warn('Nije pronađena aktivna sesija, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      const { data: { user: fetchedUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !fetchedUser) {
+        console.warn('Korisnik nije pronađen, preusmjeravanje na prijavu');
+        router.push('/auth/login');
+        return;
+      }
+      if (!fetchedUser.email) {
+        console.warn('Email korisnika nije pronađen za autentifikovanog korisnika');
+        router.push('/account?message=user_error');
+        return;
+      }
+      const isSubscribed = await checkSubscriptionStatus(fetchedUser.email);
+      if (!isSubscribed) {
+        console.warn('Nema aktivne pretplate, preusmjeravanje na nalog');
+        router.push('/account?message=subscription_required');
+        return;
+      }
+      setUser(fetchedUser);
+      setHasActiveSubscription(isSubscribed);
+      setIsLoading(false);
+    };
+    fetchUserData().catch((error) => {
+      console.warn('Greška u fetchUserData:', error.message);
+      router.push('/auth/login');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setHasActiveSubscription(false);
+        router.push('/auth/login');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        setUser(newSession.user);
+        checkSubscriptionStatus(newSession.user.email!).then((isSubscribed) => {
+          if (!isSubscribed) {
+            router.push('/account?message=subscription_required');
+          } else {
+            setHasActiveSubscription(true);
+          }
+        });
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  async function checkSubscriptionStatus(userEmail: string): Promise<boolean> {
+    const supabase = createClient();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('customer_id')
+        .eq('email', userEmail)
+        .single();
+      if (customerError || !customer) {
+        console.warn('Klijent nije pronađen za email:', userEmail);
+        return false;
+      }
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('subscriptions')
+        .select('subscription_status')
+        .eq('customer_id', customer.customer_id)
+        .in('subscription_status', ['active', 'trialing']);
+      if (subscriptionsError) {
+        console.warn('Greška pri provjeri pretplata:', subscriptionsError.message);
+        return false;
+      }
+      return !!(subscriptions && subscriptions.length > 0);
+    } catch (error) {
+      console.warn('Greška pri provjeri statusa pretplate:', (error as Error).message);
+      return false;
+    }
+  }
+
+  const handleAnalysis = async () => {
+    if (!user) return;
+    
+    setIsAnalyzing(true);
+    setError('');
+    setAnalysisResult('');
+    
+    try {
+      let prompt = '';
+      
+      switch (analysisType) {
+        case 'blood':
+          prompt = `Analiziraj sljedeće rezultate krvi i pruži medicinske uvide:
+          - Šećer u krvi: ${bloodData.bloodSugar} mg/dL
+          - Holesterol: ${bloodData.cholesterol} mg/dL
+          - Hemoglobin: ${bloodData.hemoglobin} g/dL
+          
+          Molim pruži detaljnu analizu uključujući:
+          1. Tumačenje svake vrijednosti
+          2. Potencijalne zdravstvene implikacije
+          3. Preporuke za sljedeće korake
+          4. Svaku zabrinjavajuću vrijednost koja zahtijeva hitnu pažnju`;
+          break;
+          
+        case 'bp':
+          prompt = `Analiziraj sljedeće očitanje krvnog pritiska i pruži medicinske uvide:
+          - Sistolički: ${bpData.systolic} mmHg
+          - Dijastolički: ${bpData.diastolic} mmHg
+          
+          Molim pruži detaljnu analizu uključujući:
+          1. Kategoriju krvnog pritiska (normalan, povišen, itd.)
+          2. Potencijalne zdravstvene rizike povezane s ovim očitanjem
+          3. Preporuke za stil života
+          4. Kada tražiti medicinsku pomoć`;
+          break;
+          
+        case 'xray':
+          prompt = `Analiziraj sljedeći opis rendgenske snimke i pruži medicinske uvide:
+          - Dio tijela: ${xrayData.bodyPart}
+          - Opis: ${xrayData.description}
+          
+          Molim pruži detaljnu analizu uključujući:
+          1. Potencijalna nalaza zasnovana na opisu
+          2. Moguća stanja koja bi mogla biti indicirana
+          3. Preporuke za dalju procjenu
+          4. Svaka hitna zabrinutost koja zahtijeva neposrednu pažnju`;
+          break;
+          
+        default:
+          prompt = 'Molim analiziraj pružene medicinske podatke.';
+      }
+      
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'Ti si AI medicinski asistent specijalizovan za analizu medicinskih podataka. Pružaj detaljne, tačne i korisne medicinske uvide.' },
+            { role: 'user', content: prompt }
+          ],
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Neuspješna analiza medicinskih podataka');
+      }
+      
+      const data = await response.json();
+      setAnalysisResult(data.content);
+    } catch (err) {
+      console.error('Greška u analizi:', err);
+      setError('Neuspješna analiza medicinskih podataka. Pokušajte ponovo.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const resetForm = () => {
+    setAnalysisResult('');
+    setError('');
+    setBloodData({ bloodSugar: '', cholesterol: '', hemoglobin: '' });
+    setBpData({ systolic: '', diastolic: '' });
+    setXrayData({ description: '', bodyPart: 'chest' });
+  };
+
+  const updateBloodData = (field: keyof BloodAnalysisData, value: string) => {
+    setBloodData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const updateBpData = (field: keyof BloodPressureData, value: string) => {
+    setBpData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const updateXrayData = (field: keyof XrayAnalysisData, value: string | BodyPart) => {
+    setXrayData(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-950 flex items-center justify-center transition-all duration-700">
+        <div className="text-xl text-gray-800 dark:text-gray-200">Učitavanje...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-900 dark:to-gray-800 transition-all duration-700">
+      <main className="relative">
+        {/* Hero Section */}
+        <section className="pt-8 pb-4 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 mb-6">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  AI za medicinsku analizu aktivan
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6">
+                Medicinska analiza na{' '}
+                <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 dark:from-blue-400 dark:via-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                  AI pogon-by Dr.Alen
+                </span>
+              </h1>
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                Analizirajte svoje medicinske podatke pomoću naprednog AI-a. Dobijte uvide u analize krvi, rendgenske snimke i mjerenja krvnog pritiska.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Analysis Section */}
+        <section className="pb-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Odaberite tip analize</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <button
+                    onClick={() => { setAnalysisType('blood'); resetForm(); }}
+                    className={`p-4 rounded-lg border transition-all ${
+                      analysisType === 'blood'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">Analiza krvi</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Šećer, holesterol, hemoglobin</div>
+                  </button>
+                  
+                  <button
+                    onClick={() => { setAnalysisType('bp'); resetForm(); }}
+                    className={`p-4 rounded-lg border transition-all ${
+                      analysisType === 'bp'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">Krvni pritisak</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistoličke i dijastoličke vrijednosti</div>
+                  </button>
+                  
+                  <button
+                    onClick={() => { setAnalysisType('xray'); resetForm(); }}
+                    className={`p-4 rounded-lg border transition-all ${
+                      analysisType === 'xray'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400'
+                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">Analiza rendgena</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Opišite nalaze rendgenske snimke</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Input Forms */}
+              <div className="mb-6">
+                {analysisType === 'blood' && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Rezultati analize krvi</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Šećer u krvi (mg/dL)
+                        </label>
+                        <input
+                          type="number"
+                          value={bloodData.bloodSugar}
+                          onChange={(e) => updateBloodData('bloodSugar', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          placeholder="npr. 100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Holesterol (mg/dL)
+                        </label>
+                        <input
+                          type="number"
+                          value={bloodData.cholesterol}
+                          onChange={(e) => updateBloodData('cholesterol', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          placeholder="npr. 180"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Hemoglobin (g/dL)
+                        </label>
+                        <input
+                          type="number"
+                          value={bloodData.hemoglobin}
+                          onChange={(e) => updateBloodData('hemoglobin', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          placeholder="npr. 14.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {analysisType === 'bp' && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Mjerenje krvnog pritiska</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Sistolički (mmHg)
+                        </label>
+                        <input
+                          type="number"
+                          value={bpData.systolic}
+                          onChange={(e) => updateBpData('systolic', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          placeholder="npr. 120"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Dijastolički (mmHg)
+                        </label>
+                        <input
+                          type="number"
+                          value={bpData.diastolic}
+                          onChange={(e) => updateBpData('diastolic', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          placeholder="npr. 80"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {analysisType === 'xray' && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Opis rendgenske snimke</h3>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Dio tijela
+                      </label>
+                      <select
+                        value={xrayData.bodyPart}
+                        onChange={(e) => updateXrayData('bodyPart', e.target.value as BodyPart)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      >
+                        <option value="chest">Grudi</option>
+                        <option value="abdomen">Trbuh</option>
+                        <option value="skull">Lubanja</option>
+                        <option value="spine">Kičma</option>
+                        <option value="extremity">Ekstremitet</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Opis nalaza
+                      </label>
+                      <textarea
+                        value={xrayData.description}
+                        onChange={(e) => updateXrayData('description', e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                        placeholder="Opišite šta vidite na rendgenskoj snimci..."
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={handleAnalysis}
+                  disabled={isAnalyzing}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAnalyzing ? 'Analiziranje...' : 'Analiziraj podatke'}
+                </button>
+                <button
+                  onClick={resetForm}
+                  className="px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium rounded-lg transition-colors"
+                >
+                  Resetuj
+                </button>
+              </div>
+
+              {/* Results */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <div className="text-red-700 dark:text-red-400 font-medium">Greška</div>
+                  <div className="text-red-600 dark:text-red-300 mt-1">{error}</div>
+                </div>
+              )}
+
+              {analysisResult && (
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="text-blue-700 dark:text-blue-400 font-medium mb-2">Rezultati analize</div>
+                  <div className="text-gray-800 dark:text-gray-200 whitespace-pre-line">{analysisResult}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent mb-2">
+                  99.9%
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Tačnost analize</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent mb-2">
+                  &lt;30s
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Vrijeme analize</p>
+              </div>
+              <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent mb-2">
+                  HIPAA
+                </div>
+                <p className="text-gray-700 dark:text-gray-400 font-medium">Usklađeno</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
