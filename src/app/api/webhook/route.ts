@@ -55,12 +55,12 @@ interface ExtendedTransactionData extends TransactionData {
   };
 }
 
-// Ensure customer exists - ISPRAVLJENO: Koristi pravi email
+// Ensure customer exists - ISPRAVLJENO: Kreiraj customer bez emaila prvo, ažuriraj kasnije
 async function ensureCustomerExists(
   supabase: ReturnType<typeof createClient>, 
   customerId: string, 
   occurredAt: string,
-  customerEmail?: string // DODAJTE EMAIL PARAMETER
+  customerEmail?: string // Opcionalni email za ažuriranje
 ): Promise<void> {
   const { data: existingCustomer, error: checkError } = await supabase
     .from('customers')
@@ -74,34 +74,40 @@ async function ensureCustomerExists(
   }
 
   if (!existingCustomer) {
-    console.log(`Creating missing customer record: ${customerId} with email: ${customerEmail || 'unknown'}`);
+    console.log(`Creating initial customer record: ${customerId}`);
+    
     const { error: insertError } = await supabase
       .from('customers')
       .insert({
         customer_id: customerId,
-        email: customerEmail || 'unknown@customer.com', // KORISTITE PRAVI EMAIL
+        email: 'pending-email@customer.com', // Privremeni email
         created_at: occurredAt,
         updated_at: occurredAt,
       } as Database['public']['Tables']['customers']['Insert']);
 
     if (insertError) {
-      console.error('Error creating customer record:', insertError.message);
+      console.error('Error creating initial customer record:', insertError.message);
     } else {
-      console.log(`Created customer record: ${customerId} with email: ${customerEmail || 'unknown'}`);
+      console.log(`Created initial customer record: ${customerId}`);
     }
-  } else if (customerEmail && existingCustomer.email !== customerEmail) {
-    // Ažuriraj email ako se promijenio
-    console.log(`Updating customer ${customerId} email from ${existingCustomer.email} to ${customerEmail}`);
+  }
+
+  // AŽURIRAJ EMAIL AKO JE PROSLIJEDEN
+  if (customerEmail && existingCustomer?.email !== customerEmail) {
+    console.log(`Updating customer ${customerId} email to: ${customerEmail}`);
+    
     const { error: updateError } = await supabase
       .from('customers')
       .update({ 
         email: customerEmail,
-        updated_at: occurredAt 
+        updated_at: occurredAt
       } as Database['public']['Tables']['customers']['Update'])
       .eq('customer_id', customerId);
 
     if (updateError) {
       console.error('Error updating customer email:', updateError.message);
+    } else {
+      console.log(`✅ Successfully updated customer ${customerId} with email: ${customerEmail}`);
     }
   }
 }
@@ -192,36 +198,95 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const event: PaddleWebhookEvent = JSON.parse(body);
     console.log(`Received Paddle webhook: ${event.event_type} (ID: ${event.event_id})`);
 
+    // DEBUG: Log full event data for key events
+    if (event.event_type.includes('customer') || event.event_type === 'subscription.created') {
+      console.log('Event data:', JSON.stringify(event.data, null, 2));
+    }
+
     switch (event.event_type) {
-      // Customer events - OVO JE GLAVNI IZVOR EMAILA
+      // Customer events - OVO JE KLJUČNO ZA EMAIL
       case 'customer.created':
       case 'customer.updated': {
         const customerData = event.data as CustomerData;
-        const payload: Database['public']['Tables']['customers']['Insert'] = {
-          customer_id: customerData.id,
-          email: customerData.email ?? '',
-          created_at: customerData.created_at ?? event.occurred_at,
-          updated_at: customerData.updated_at ?? event.occurred_at,
+        
+        console.log(`🔄 Processing customer event: ${customerData.id} with email: ${customerData.email}`);
+        
+        // Koristite ensureCustomerExists sa emailom da ažurira postojeći record
+        await ensureCustomerExists(supabase, customerData.id, event.occurred_at, customerData.email);
+        break;
+      }
+
+      // Transaction events - STIŽU PRVI, KREIRAJU CUSTOMERA BEZ EMAILA
+      case 'transaction.created':
+      case 'transaction.updated':
+      case 'transaction.billed':
+      case 'transaction.paid':
+      case 'transaction.completed':
+      case 'transaction.canceled':
+      case 'transaction.ready': {
+        const data = event.data as ExtendedTransactionData;
+        
+        console.log(`💳 Processing transaction: ${data.id} for customer: ${data.customer_id}`);
+        
+        // Kreiraj customer bez emaila (bit će ažuriran kasnije)
+        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
+
+        const amount = calculateTransactionAmount(data);
+
+        const payload: Database['public']['Tables']['transactions']['Insert'] = {
+          transaction_id: data.id,
+          subscription_id: data.subscription_id ?? null,
+          customer_id: data.customer_id,
+          status: data.status,
+          amount,
+          currency_code: data.currency_code ?? null,
+          billed_at: data.billed_at ?? null,
+          created_at: data.created_at ?? event.occurred_at,
+          updated_at: data.updated_at ?? event.occurred_at,
         };
 
-        const { error } = await supabase.from('customers').upsert(payload, { onConflict: 'customer_id' });
+        const { error } = await supabase.from('transactions').upsert(payload, { onConflict: 'transaction_id' });
         if (error) {
           console.error(`Error on ${event.event_type}:`, error.message);
         } else {
-          console.log(`Successfully processed customer ${customerData.id} with email: ${customerData.email}`);
+          console.log(`✅ Successfully processed transaction ${data.id}`);
         }
         break;
       }
 
-      // Subscription events - ISPRAVLJENO: Proslijedite customer email ako je dostupan
+      // Address events - TAKOĐER KREIRAJU CUSTOMERA BEZ EMAILA
+      case 'address.created':
+      case 'address.updated': {
+        const data = event.data as AddressData;
+        
+        console.log(`🏠 Processing address for customer: ${data.customer_id}`);
+        
+        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
+        
+        const payload: CustomerUpdatePayload = { 
+          updated_at: event.occurred_at 
+        };
+        
+        const { error } = await supabase
+          .from('customers')
+          .update(payload as Database['public']['Tables']['customers']['Update'])
+          .eq('customer_id', data.customer_id);
+        
+        if (error) {
+          console.error(`Error updating customer due to ${event.event_type}:`, error.message);
+        }
+        break;
+      }
+
+      // Subscription events - STIŽU NAKON CUSTOMERA, KORISTE POSTOJEĆEG
       case 'subscription.created':
       case 'subscription.activated': {
         const data = event.data as ExtendedSubscriptionData;
         
-        // Pokušajte dobiti email iz subscription podataka ili koristite placeholder
-        const customerEmail = 'unknown@customer.com'; // Ovo će biti nadjačano ako imamo customer event
+        console.log(`🔄 Processing subscription: ${data.id} for customer: ${data.customer_id}`);
         
-        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at, customerEmail);
+        // Customer bi trebao već postojati sa emailom
+        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
 
         const payload: Database['public']['Tables']['subscriptions']['Insert'] = {
           subscription_id: data.id,
@@ -240,7 +305,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         };
 
         const { error } = await supabase.from('subscriptions').upsert(payload, { onConflict: 'subscription_id' });
-        if (error) console.error(`Error on ${event.event_type}:`, error.message);
+        if (error) {
+          console.error(`Error on ${event.event_type}:`, error.message);
+        } else {
+          console.log(`✅ Successfully processed subscription ${data.id}`);
+        }
         break;
       }
 
@@ -299,47 +368,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (error) {
           console.error(`Error updating subscription ${data.id} with status ${normalizedStatus}:`, error.message);
         } else {
-          console.log(`Successfully updated subscription ${data.id} with status ${normalizedStatus}`);
+          console.log(`✅ Successfully updated subscription ${data.id} with status ${normalizedStatus}`);
         }
         break;
       }
 
-      // Transaction events - ISPRAVLJENO: Proslijedite customer email
-      case 'transaction.created':
-      case 'transaction.updated':
-      case 'transaction.billed':
-      case 'transaction.paid':
-      case 'transaction.completed':
-      case 'transaction.canceled':
-      case 'transaction.ready': {
-        const data = event.data as ExtendedTransactionData;
-        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
-
-        const amount = calculateTransactionAmount(data);
-
-        const payload: Database['public']['Tables']['transactions']['Insert'] = {
-          transaction_id: data.id,
-          subscription_id: data.subscription_id ?? null,
-          customer_id: data.customer_id,
-          status: data.status,
-          amount,
-          currency_code: data.currency_code ?? null,
-          billed_at: data.billed_at ?? null,
-          created_at: data.created_at ?? event.occurred_at,
-          updated_at: data.updated_at ?? event.occurred_at,
-        };
-
-        const { error } = await supabase.from('transactions').upsert(payload, { onConflict: 'transaction_id' });
-        if (error) console.error(`Error on ${event.event_type}:`, error.message);
-        break;
-      }
-
-      // Address & Business - ISPRAVLJENO: Ažuriraj i email ako je dostupan
-      case 'address.created':
-      case 'address.updated':
+      // Business events
       case 'business.created':
       case 'business.updated': {
-        const data = event.data as AddressData | BusinessData;
+        const data = event.data as BusinessData;
         const payload: CustomerUpdatePayload = { 
           updated_at: event.occurred_at 
         };
@@ -365,7 +402,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'report.created':
       case 'report.updated': {
         const data = event.data as GenericData;
-        console.log(`Logged event: ${event.event_type}, ID:`, data.id);
+        console.log(`📝 Logged event: ${event.event_type}, ID:`, data.id);
         break;
       }
 
