@@ -39,20 +39,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Umjesto Secret API Key, koristite Publishable Key za subscription management
-    const paddlePublishableKey = process.env.NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY;
-    if (!paddlePublishableKey) {
-      console.error('NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY environment variable is not set');
+    // Koristite PADDLE_API_KEY umjesto PADDLE_SECRET_KEY
+    const paddleApiKey = process.env.PADDLE_API_KEY;
+    if (!paddleApiKey) {
+      console.error('PADDLE_API_KEY environment variable is not set');
       return NextResponse.json(
         { error: 'Server configuration error' },
         { status: 500 }
       );
     }
 
-    // Za Paddle API pozive i dalje koristite Secret Key
-    const paddleSecretKey = process.env.PADDLE_SECRET_KEY;
-    if (!paddleSecretKey) {
-      console.error('PADDLE_SECRET_KEY environment variable is not set');
+    // Publishable key check (za frontend)
+    const paddlePublishableKey = process.env.NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY;
+    if (!paddlePublishableKey) {
+      console.error('NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY environment variable is not set');
       return NextResponse.json(
         { error: 'Server configuration error' },
         { status: 500 }
@@ -98,16 +98,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Perform the action with Paddle API
-    // PADDLE V2 KORISTI DRUGAČIJE ENDPOINT-E!
     let paddleUrl: string;
-    const paddleMethod: string = 'PATCH'; // Paddle V2 koristi PATCH za update
+    const paddleMethod: string = 'PATCH';
     let paddleBody: Record<string, unknown> = {};
 
     switch (action) {
       case 'pause':
         paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
-          paused: true // Paddle V2 koristi 'paused' umjesto 'status'
+          paused: true
         };
         break;
 
@@ -122,7 +121,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'resume':
         paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
-          paused: false // Paddle V2 koristi 'paused' umjesto 'status'
+          paused: false
         };
         break;
 
@@ -139,13 +138,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method: paddleMethod,
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${paddleSecretKey}` 
+        'Authorization': `Bearer ${paddleApiKey}` 
       },
       body: paddleBody,
       subscriptionId,
       action,
       immediate,
-      publishable_key: paddlePublishableKey.substring(0, 10) + '...' // Log samo prefix
+      api_key_prefix: paddleApiKey.substring(0, 10) + '...'
     });
 
     let response;
@@ -154,7 +153,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         method: paddleMethod,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${paddleSecretKey}`,
+          'Authorization': `Bearer ${paddleApiKey}`,
         },
         body: JSON.stringify(paddleBody),
       });
