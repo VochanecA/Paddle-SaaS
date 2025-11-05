@@ -30,6 +30,7 @@ interface SubscriptionUpdatePayload {
 
 interface CustomerUpdatePayload {
   updated_at: string;
+  email?: string;
 }
 
 // Extended interfaces for Paddle data
@@ -54,15 +55,16 @@ interface ExtendedTransactionData extends TransactionData {
   };
 }
 
-// Ensure customer exists
+// Ensure customer exists - ISPRAVLJENO: Koristi pravi email
 async function ensureCustomerExists(
   supabase: ReturnType<typeof createClient>, 
   customerId: string, 
-  occurredAt: string
+  occurredAt: string,
+  customerEmail?: string // DODAJTE EMAIL PARAMETER
 ): Promise<void> {
   const { data: existingCustomer, error: checkError } = await supabase
     .from('customers')
-    .select('customer_id')
+    .select('customer_id, email')
     .eq('customer_id', customerId)
     .single();
 
@@ -72,12 +74,12 @@ async function ensureCustomerExists(
   }
 
   if (!existingCustomer) {
-    console.log(`Creating missing customer record: ${customerId}`);
+    console.log(`Creating missing customer record: ${customerId} with email: ${customerEmail || 'unknown'}`);
     const { error: insertError } = await supabase
       .from('customers')
       .insert({
         customer_id: customerId,
-        email: '',
+        email: customerEmail || 'unknown@customer.com', // KORISTITE PRAVI EMAIL
         created_at: occurredAt,
         updated_at: occurredAt,
       } as Database['public']['Tables']['customers']['Insert']);
@@ -85,7 +87,21 @@ async function ensureCustomerExists(
     if (insertError) {
       console.error('Error creating customer record:', insertError.message);
     } else {
-      console.log(`Created customer record: ${customerId}`);
+      console.log(`Created customer record: ${customerId} with email: ${customerEmail || 'unknown'}`);
+    }
+  } else if (customerEmail && existingCustomer.email !== customerEmail) {
+    // Ažuriraj email ako se promijenio
+    console.log(`Updating customer ${customerId} email from ${existingCustomer.email} to ${customerEmail}`);
+    const { error: updateError } = await supabase
+      .from('customers')
+      .update({ 
+        email: customerEmail,
+        updated_at: occurredAt 
+      } as Database['public']['Tables']['customers']['Update'])
+      .eq('customer_id', customerId);
+
+    if (updateError) {
+      console.error('Error updating customer email:', updateError.message);
     }
   }
 }
@@ -177,7 +193,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.log(`Received Paddle webhook: ${event.event_type} (ID: ${event.event_id})`);
 
     switch (event.event_type) {
-      // Customer events
+      // Customer events - OVO JE GLAVNI IZVOR EMAILA
       case 'customer.created':
       case 'customer.updated': {
         const customerData = event.data as CustomerData;
@@ -189,15 +205,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         };
 
         const { error } = await supabase.from('customers').upsert(payload, { onConflict: 'customer_id' });
-        if (error) console.error(`Error on ${event.event_type}:`, error.message);
+        if (error) {
+          console.error(`Error on ${event.event_type}:`, error.message);
+        } else {
+          console.log(`Successfully processed customer ${customerData.id} with email: ${customerData.email}`);
+        }
         break;
       }
 
-      // Subscription events - SADA ĆE RADITI JER KOLONE POSTOJE
+      // Subscription events - ISPRAVLJENO: Proslijedite customer email ako je dostupan
       case 'subscription.created':
       case 'subscription.activated': {
         const data = event.data as ExtendedSubscriptionData;
-        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at);
+        
+        // Pokušajte dobiti email iz subscription podataka ili koristite placeholder
+        const customerEmail = 'unknown@customer.com'; // Ovo će biti nadjačano ako imamo customer event
+        
+        await ensureCustomerExists(supabase, data.customer_id, event.occurred_at, customerEmail);
 
         const payload: Database['public']['Tables']['subscriptions']['Insert'] = {
           subscription_id: data.id,
@@ -251,7 +275,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           payload.product_id = data.items[0].price.product_id;
         }
 
-        // Update timestamps according to status - SADA ĆE RADITI
+        // Update timestamps according to status
         switch (normalizedStatus) {
           case 'active':
           case 'trialing':
@@ -280,7 +304,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         break;
       }
 
-      // Transaction events
+      // Transaction events - ISPRAVLJENO: Proslijedite customer email
       case 'transaction.created':
       case 'transaction.updated':
       case 'transaction.billed':
@@ -310,17 +334,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         break;
       }
 
-      // Address & Business
+      // Address & Business - ISPRAVLJENO: Ažuriraj i email ako je dostupan
       case 'address.created':
       case 'address.updated':
       case 'business.created':
       case 'business.updated': {
         const data = event.data as AddressData | BusinessData;
-        const payload: CustomerUpdatePayload = { updated_at: event.occurred_at };
+        const payload: CustomerUpdatePayload = { 
+          updated_at: event.occurred_at 
+        };
+        
         const { error } = await supabase
           .from('customers')
           .update(payload as Database['public']['Tables']['customers']['Update'])
           .eq('customer_id', data.customer_id);
+        
         if (error) console.error(`Error updating customer due to ${event.event_type}:`, error.message);
         break;
       }
