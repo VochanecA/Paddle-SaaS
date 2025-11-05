@@ -39,10 +39,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Verify environment variables
-    const paddleApiKey = process.env.PADDLE_API_KEY;
-    if (!paddleApiKey) {
-      console.error('PADDLE_API_KEY environment variable is not set');
+    // Umjesto Secret API Key, koristite Publishable Key za subscription management
+    const paddlePublishableKey = process.env.NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY;
+    if (!paddlePublishableKey) {
+      console.error('NEXT_PUBLIC_PADDLE_PUBLISHABLE_KEY environment variable is not set');
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
+    // Za Paddle API pozive i dalje koristite Secret Key
+    const paddleSecretKey = process.env.PADDLE_SECRET_KEY;
+    if (!paddleSecretKey) {
+      console.error('PADDLE_SECRET_KEY environment variable is not set');
       return NextResponse.json(
         { error: 'Server configuration error' },
         { status: 500 }
@@ -97,7 +107,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'pause':
         paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
-          status: 'paused' // Paddle V2: pause se radi preko status update
+          paused: true // Paddle V2 koristi 'paused' umjesto 'status'
         };
         break;
 
@@ -112,7 +122,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'resume':
         paddleUrl = `${paddleBaseUrl}/subscriptions/${subscriptionId}`;
         paddleBody = {
-          status: 'active' // Paddle V2: resume se radi preko status update
+          paused: false // Paddle V2 koristi 'paused' umjesto 'status'
         };
         break;
 
@@ -129,12 +139,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method: paddleMethod,
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${paddleApiKey}` 
+        'Authorization': `Bearer ${paddleSecretKey}` 
       },
       body: paddleBody,
       subscriptionId,
       action,
-      immediate
+      immediate,
+      publishable_key: paddlePublishableKey.substring(0, 10) + '...' // Log samo prefix
     });
 
     let response;
@@ -143,7 +154,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         method: paddleMethod,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${paddleApiKey}`,
+          'Authorization': `Bearer ${paddleSecretKey}`,
         },
         body: JSON.stringify(paddleBody),
       });
