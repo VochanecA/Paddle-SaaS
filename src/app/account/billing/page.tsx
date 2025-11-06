@@ -1,19 +1,17 @@
-// src/app/account/page.tsx
+// src/app/account/billing/page.tsx
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { SubscriptionTable } from '@/components/SubscriptionTable';
 import { 
-  User, 
-  Shield, 
   CreditCard, 
   ExternalLink, 
   AlertCircle,
-  CheckCircle,
-  Calendar,
   Home,
-  Settings
+  Shield,
+  Settings,
+  ArrowLeft
 } from 'lucide-react';
 
 // --- Interfaces ---
@@ -135,10 +133,6 @@ async function generatePaddlePortalLink(customerId: string): Promise<PortalData>
   }
 }
 
-interface AccountPageProps {
-  searchParams: Promise<{ refresh?: string; checkout_success?: string }>;
-}
-
 // --- Custom Components ---
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
@@ -180,24 +174,6 @@ function CardContent({ children, className = '' }: { children: React.ReactNode; 
   );
 }
 
-function Badge({ children, variant = 'default', className = '' }: { 
-  children: React.ReactNode; 
-  variant?: 'default' | 'secondary' | 'destructive'; 
-  className?: string;
-}) {
-  const variants = {
-    default: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-    secondary: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
-    destructive: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-  };
-  
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]} ${className}`}>
-      {children}
-    </span>
-  );
-}
-
 function Alert({ children, variant = 'default', className = '' }: { 
   children: React.ReactNode; 
   variant?: 'default' | 'destructive' | 'success'; 
@@ -232,9 +208,7 @@ function AlertDescription({ children, className = '' }: { children: React.ReactN
   );
 }
 
-// --- AccountPage Component ---
-export default async function AccountPage({ searchParams }: AccountPageProps) {
-  const params = await searchParams;
+export default async function BillingPage() {
   const supabase = createClient(cookies());
   const { data: { user } } = await supabase.auth.getUser();
   
@@ -248,10 +222,6 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
     .eq('email', user.email)
     .single();
     
-  if (params.checkout_success) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  
   const portalData = customerData?.customer_id
     ? await generatePaddlePortalLink(customerData.customer_id)
     : { overview: null, subscriptions: [] };
@@ -263,14 +233,14 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
       href: '/account',
       icon: Home,
       description: 'Account overview and information',
-      current: true
+      current: false
     },
     {
       name: 'Billing',
       href: '/account/billing',
       icon: CreditCard,
       description: 'Billing and payment methods',
-      current: false
+      current: true
     },
     {
       name: 'Security',
@@ -300,22 +270,20 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Account</h1>
+          <div className="flex items-center gap-4 mb-4">
+            <Link
+              href="/account"
+              className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to Overview
+            </Link>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Billing</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Manage your account settings, subscriptions, and security preferences.
+            Manage your payment methods, billing information, and invoices.
           </p>
         </div>
-
-        {/* Success Message */}
-        {params.checkout_success && (
-          <Alert variant="success" className="mb-6">
-            <CheckCircle className="h-4 w-4" />
-            <AlertTitle>Subscription activated!</AlertTitle>
-            <AlertDescription>
-              Your subscription has been successfully activated. You can now access all premium features.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar Navigation */}
@@ -355,145 +323,59 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
             </nav>
           </div>
 
-          {/* Main Content Area - Only Account Overview */}
+          {/* Main Content Area */}
           <div className="flex-1 min-w-0">
-            <div className="space-y-6">
-              {/* Overview Section */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Home className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                    Account Overview
-                  </CardTitle>
-                  <CardDescription>
-                    Your account information and quick access to other sections
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Account Details Card */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <User className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                          Account Information
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Email Address</p>
-                          <p className="font-medium text-gray-900 dark:text-white">{user.email}</p>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Member Since</p>
-                          <p className="font-medium text-gray-900 dark:text-white flex items-center">
-                            <Calendar className="mr-2 h-4 w-4 text-gray-600 dark:text-gray-400" />
-                            {new Date(user.created_at).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                            })}
-                          </p>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Account Status</p>
-                          <Badge variant="secondary">Active</Badge>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Customer ID</p>
-                          <p className="font-mono text-sm text-gray-900 dark:text-white">
-                            {customerData?.customer_id || 'Not available'}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    
-                    {/* Quick Actions Card */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Quick Actions</CardTitle>
-                        <CardDescription>
-                          Quickly navigate to other account sections
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="space-y-3">
-                          <Link
-                            href="/account/billing"
-                            className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <CreditCard className="h-5 w-5 text-gray-400" />
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">Billing & Payments</p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">Manage payment methods and invoices</p>
-                            </div>
-                          </Link>
-
-                          <Link
-                            href="/account/security"
-                            className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <Shield className="h-5 w-5 text-gray-400" />
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">Security Settings</p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">Update password and security</p>
-                            </div>
-                          </Link>
-
-                          <Link
-                            href="/account/subscriptions"
-                            className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <Settings className="h-5 w-5 text-gray-400" />
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">Subscriptions</p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">Manage your subscriptions</p>
-                            </div>
-                          </Link>
-
-                          <Link
-                            href="/web-app"
-                            className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <ExternalLink className="h-5 w-5 text-gray-400" />
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">Web App</p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">Access the application</p>
-                            </div>
-                          </Link>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Active Subscriptions Preview */}
-              {portalData.subscriptions.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Active Subscriptions</CardTitle>
-                    <CardDescription>
-                      Your current subscription plans
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <SubscriptionTable subscriptions={portalData.subscriptions} rowsPerPage={3} />
-                    <div className="mt-4 flex justify-end">
-                      <Link
-                        href="/account/subscriptions"
-                        className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  Billing Management
+                </CardTitle>
+                <CardDescription>
+                  Manage your payment methods, billing information, and invoices.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {portalData.overview ? (
+                  <>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Manage your billing information, payment methods, and subscription details.
+                        </p>
+                      </div>
+                      <a
+                        href={portalData.overview}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                       >
-                        View all subscriptions →
-                      </Link>
+                        Manage Billing
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+                    
+                    {portalData.subscriptions.length > 0 && (
+                      <>
+                        <div className="border-t border-gray-200 dark:border-gray-700 my-4"></div>
+                        <div>
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Active Subscriptions</h3>
+                          <SubscriptionTable subscriptions={portalData.subscriptions} rowsPerPage={5} />
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Billing Portal Unavailable</AlertTitle>
+                    <AlertDescription>
+                      Unable to load billing portal. Please ensure your account is set up or contact support.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
