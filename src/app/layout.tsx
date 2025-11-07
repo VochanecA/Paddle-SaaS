@@ -9,6 +9,7 @@ import { ToastProvider } from '@/components/ToastProvider'
 import Footer from '@/components/Footer'
 import { Analytics } from '@vercel/analytics/next'
 import { seoConfig } from '@/lib/seo'
+import ScrollToTop from '@/components/ScrollToTop';
 
 // Initialize Inter font with subsets and display settings
 const inter = Inter({
@@ -72,6 +73,8 @@ export default function RootLayout({
         <Providers>
           <ToastProvider>
             <Navigation />
+            {/* ScrollToTop je bolje staviti ovdje - izvan main za globalni efekat */}
+            <ScrollToTop />
             <main className="flex-grow">
               {children}
               <Analytics />

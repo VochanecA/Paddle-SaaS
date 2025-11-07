@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { openCheckout } from '@/lib/paddle';
 import { createClient } from '@/lib/supabase/client';
 import { ArrowRight, CheckCircle } from 'lucide-react';
@@ -12,11 +13,6 @@ interface PricingCardProps {
   features: string[];
   priceId: string;
   popular?: boolean;
-}
-
-// Define types for customer data
-interface CustomerData {
-  customer_id?: string;
 }
 
 // Define error types
@@ -38,6 +34,7 @@ export function PricingCard({
 }: PricingCardProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   // Handle checkout process with proper error handling
   const handleCheckout = useCallback(async (event: MouseEvent<HTMLButtonElement>) => {
@@ -49,22 +46,30 @@ export function PricingCard({
     
     try {
       const supabase = createClient();
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      // Koristi getSession() umjesto getUser() - bolje za provjeru auth stanja
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       // Handle authentication error
-      if (authError) {
-        throw new Error(`Authentication error: ${authError.message}`);
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Authentication error: ${sessionError.message}`);
       }
       
-      // Redirect to signup if user is not authenticated
-      if (!user) {
-        window.location.href = '/auth/signup';
+      // Redirect to login if user is not authenticated
+      if (!session) {
+        console.log('No session found, redirecting to login...');
+        router.push('/auth/login?redirect=/pricing');
         return;
       }
+      
+      const user = session.user;
       
       if (!user.email) {
         throw new Error('User email is missing');
       }
+      
+      console.log('User authenticated:', user.email);
       
       // Get customer ID from database with proper error handling
       const { data: customer, error: customerError } = await supabase
@@ -73,13 +78,14 @@ export function PricingCard({
         .eq('email', user.email)
         .single();
         
-      if (customerError) {
+      if (customerError && customerError.code !== 'PGRST116') {
+        // PGRST116 je "not found" error - to je ok
         console.warn('Customer lookup error:', customerError);
-        // Continue without customer_id if it doesn't exist
       }
       
       // Open checkout with proper typing
-      const customerId = customer?.customer_id as string | undefined;
+      const customerId = customer?.customer_id;
+      console.log('Opening checkout for priceId:', priceId);
       await openCheckout(priceId, user.email, customerId);
       
     } catch (err) {
@@ -88,10 +94,15 @@ export function PricingCard({
       
       setError(errorMessage);
       console.error('Checkout error:', checkoutError);
+      
+      // Ako je auth error, možda redirect na login
+      if (errorMessage.includes('Authentication') || errorMessage.includes('session')) {
+        router.push('/auth/login?redirect=/pricing');
+      }
     } finally {
       setLoading(false);
     }
-  }, [priceId]);
+  }, [priceId, router]);
 
   return (
     <div 
