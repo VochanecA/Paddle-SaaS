@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { getNextVersion } from '@/lib/getNextVersion';
 import Link from 'next/link';
 
+export const dynamic = "force-static";
+
 /**
  * HomePage component - The main landing page for the SaaS Starter Kit
  * Includes Hero section, Features section with animated backgrounds, and CTAs
