@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useTheme } from 'next-themes';
 import { Calculator, AlertCircle, CheckCircle, TrendingUp, Download, BarChart3, Link, HelpCircle } from 'lucide-react';
 
 interface RunwayParams {
@@ -33,6 +34,9 @@ interface DemandParams {
 }
 
 const AirportCapacityCalculator: React.FC = () => {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
   const [runwayParams, setRunwayParams] = useState<RunwayParams>({
     avgIntervalVMC: 2.5,
     avgIntervalIMC: 4.0,
@@ -62,6 +66,10 @@ const AirportCapacityCalculator: React.FC = () => {
     projectionYears: 3
   });
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Helper function to safely parse numbers
   const safeParseFloat = (value: string, defaultValue: number): number => {
     const parsed = parseFloat(value);
@@ -71,6 +79,51 @@ const AirportCapacityCalculator: React.FC = () => {
   const safeParseInt = (value: string, defaultValue: number): number => {
     const parsed = parseInt(value);
     return isNaN(parsed) || parsed <= 0 ? defaultValue : parsed;
+  };
+
+  // Theme-based styles
+  const isLight = mounted ? resolvedTheme === 'light' : true;
+
+  const containerStyles = {
+    light: 'bg-gradient-to-br from-slate-50 to-blue-100',
+    dark: 'bg-gradient-to-br from-gray-900 to-blue-900'
+  };
+
+  const cardStyles = {
+    light: 'bg-white text-gray-800 shadow-lg',
+    dark: 'bg-gray-800 text-gray-100 shadow-xl'
+  };
+
+  const inputStyles = {
+    light: 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-transparent',
+    dark: 'bg-gray-700 border-gray-600 text-gray-100 focus:ring-blue-400 focus:border-transparent placeholder-gray-400'
+  };
+
+  const statusCardStyles = {
+    green: {
+      light: 'bg-green-50 border-green-200 text-green-800',
+      dark: 'bg-green-900/30 border-green-700 text-green-300'
+    },
+    yellow: {
+      light: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+      dark: 'bg-yellow-900/30 border-yellow-700 text-yellow-300'
+    },
+    orange: {
+      light: 'bg-orange-50 border-orange-200 text-orange-800',
+      dark: 'bg-orange-900/30 border-orange-700 text-orange-300'
+    },
+    red: {
+      light: 'bg-red-50 border-red-200 text-red-800',
+      dark: 'bg-red-900/30 border-red-700 text-red-300'
+    },
+    gray: {
+      light: 'bg-gray-50 text-gray-700',
+      dark: 'bg-gray-700 text-gray-300'
+    },
+    blue: {
+      light: 'bg-blue-50 border-blue-200 text-blue-800',
+      dark: 'bg-blue-900/30 border-blue-700 text-blue-300'
+    }
   };
 
   // Runway Capacity Calculations
@@ -184,32 +237,32 @@ const AirportCapacityCalculator: React.FC = () => {
     if (utilization < 70) {
       return { 
         status: 'Dovoljan kapacitet', 
-        color: 'text-green-600', 
-        bgColor: 'bg-green-50',
+        color: 'text-green-600 dark:text-green-400',
+        bgColor: isLight ? statusCardStyles.green.light : statusCardStyles.green.dark,
         icon: CheckCircle,
         recommendation: 'Nema potrebe za hitnim mjerama. Monitoring kapaciteta.'
       };
     } else if (utilization < 85) {
       return { 
         status: 'Približavanje granici', 
-        color: 'text-yellow-600', 
-        bgColor: 'bg-yellow-50',
+        color: 'text-yellow-600 dark:text-yellow-400',
+        bgColor: isLight ? statusCardStyles.yellow.light : statusCardStyles.yellow.dark,
         icon: AlertCircle,
         recommendation: 'Potreban kontinuirani monitoring. Planirati kratkoročne mjere.'
       };
     } else if (utilization < 95) {
       return { 
         status: 'Kritično opterećenje', 
-        color: 'text-orange-600', 
-        bgColor: 'bg-orange-50',
+        color: 'text-orange-600 dark:text-orange-400',
+        bgColor: isLight ? statusCardStyles.orange.light : statusCardStyles.orange.dark,
         icon: AlertCircle,
         recommendation: 'Hitne kratkoročne mjere potrebne. Učestala kašnjenja.'
       };
     } else {
       return { 
         status: 'PREZASIĆEN KAPACITET', 
-        color: 'text-red-600', 
-        bgColor: 'bg-red-50',
+        color: 'text-red-600 dark:text-red-400',
+        bgColor: isLight ? statusCardStyles.red.light : statusCardStyles.red.dark,
         icon: AlertCircle,
         recommendation: 'HITNA INTERVENCIJA! Značajna kašnjenja. Potrebna koordinacija.'
       };
@@ -378,35 +431,64 @@ KRAJ IZVJEŠTAJA
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-100 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-{/* Header */}
-<div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-  <div className="flex items-center justify-between">
-    <div className="flex items-center gap-4">
-      <Calculator className="w-12 h-12 text-blue-600" />
-      <div>
-        <h1 className="text-3xl font-bold text-gray-800">
-          Kalkulator analize kapaciteta aerodroma
-        </h1>
-        <p className="text-gray-600">
-          Interaktivna analiza u skladu sa Pravilnikom CG
-        </p>
+  if (!mounted) {
+    return (
+      <div className={`min-h-screen ${containerStyles.light} p-4 md:p-8`}>
+        <div className="max-w-7xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-16 bg-gray-200 rounded-xl mb-6"></div>
+            <div className="h-32 bg-gray-200 rounded-xl mb-6"></div>
+            <div className="grid lg:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-64 bg-gray-200 rounded-xl"></div>
+                ))}
+              </div>
+              <div className="space-y-6">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-48 bg-gray-200 rounded-xl"></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <a 
-      href="/help" 
-      className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-    >
-      <HelpCircle className="w-5 h-5" />
-      Pomoć i uputstva
-    </a>
-  </div>
-</div>
+    );
+  }
+
+  return (
+    <div className={`min-h-screen ${isLight ? containerStyles.light : containerStyles.dark} p-4 md:p-8 transition-colors duration-300`}>
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className={`rounded-xl shadow-lg p-6 mb-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Calculator className="w-12 h-12 text-blue-600 dark:text-blue-400" />
+              <div>
+                <h1 className="text-3xl font-bold">
+                  Kalkulator analize kapaciteta aerodroma
+                </h1>
+                <p className={`${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                  Interaktivna analiza u skladu sa Pravilnikom CG
+                </p>
+              </div>
+            </div>
+            <a 
+              href="/help" 
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                isLight 
+                  ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' 
+                  : 'bg-blue-900/30 text-blue-300 hover:bg-blue-900/50'
+              }`}
+            >
+              <HelpCircle className="w-5 h-5" />
+              Pomoć i uputstva
+            </a>
+          </div>
+        </div>
 
         {/* Current Status Card */}
-        <div className={`${currentStatus.bgColor} border-2 border-opacity-50 rounded-xl shadow-lg p-6 mb-6`}>
+        <div className={`rounded-xl shadow-lg p-6 mb-6 border-2 border-opacity-50 ${currentStatus.bgColor}`}>
           <div className="flex items-start gap-4">
             <StatusIcon className={`w-12 h-12 ${currentStatus.color}`} />
             <div className="flex-1">
@@ -415,25 +497,27 @@ KRAJ IZVJEŠTAJA
               </h2>
               <div className="grid md:grid-cols-3 gap-4 mb-3">
                 <div>
-                  <p className="text-sm text-gray-600">Trenutne operacije</p>
-                  <p className="text-xl font-bold text-gray-800">
+                  <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Trenutne operacije</p>
+                  <p className="text-xl font-bold">
                     {demandParams.currentOperations} op/sat
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Deklarisani kapacitet</p>
-                  <p className="text-xl font-bold text-gray-800">
+                  <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Deklarisani kapacitet</p>
+                  <p className="text-xl font-bold">
                     {overallCapacity.hourlyCapacity} op/sat
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Iskorišćenost</p>
+                  <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Iskorišćenost</p>
                   <p className={`text-xl font-bold ${currentStatus.color}`}>
                     {currentUtilization}%
                   </p>
                 </div>
               </div>
-              <p className="text-sm text-gray-700 bg-white bg-opacity-50 p-3 rounded">
+              <p className={`text-sm p-3 rounded ${
+                isLight ? 'bg-white bg-opacity-50 text-gray-700' : 'bg-black bg-opacity-30 text-gray-300'
+              }`}>
                 <strong>Preporuka:</strong> {currentStatus.recommendation}
               </p>
             </div>
@@ -444,253 +528,120 @@ KRAJ IZVJEŠTAJA
           {/* Input Parameters */}
           <div className="space-y-6">
             {/* Runway Parameters */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 🛫 Parametri piste
               </h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Prosječan interval - VMC (min)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.1"
-                    value={runwayParams.avgIntervalVMC}
-                    onChange={(e) => setRunwayParams({...runwayParams, avgIntervalVMC: safeParseFloat(e.target.value, 2.5)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Prosječan interval - IMC (min)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.1"
-                    value={runwayParams.avgIntervalIMC}
-                    onChange={(e) => setRunwayParams({...runwayParams, avgIntervalIMC: safeParseFloat(e.target.value, 4.0)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    VMC procenat (%)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={runwayParams.vmcPercentage}
-                    onChange={(e) => setRunwayParams({...runwayParams, vmcPercentage: safeParseInt(e.target.value, 70)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Faktor mješovitih operacija (0-1)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.1"
-                    max="1"
-                    value={runwayParams.mixedOperationsFactor}
-                    onChange={(e) => setRunwayParams({...runwayParams, mixedOperationsFactor: safeParseFloat(e.target.value, 0.8)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sigurnosni faktor (0-1)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.1"
-                    max="1"
-                    value={runwayParams.safetyFactor}
-                    onChange={(e) => setRunwayParams({...runwayParams, safetyFactor: safeParseFloat(e.target.value, 0.85)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+                {[
+                  { label: 'Prosječan interval - VMC (min)', value: runwayParams.avgIntervalVMC, set: (v: number) => setRunwayParams({...runwayParams, avgIntervalVMC: v}), type: 'number', step: 0.1, min: 0.1 },
+                  { label: 'Prosječan interval - IMC (min)', value: runwayParams.avgIntervalIMC, set: (v: number) => setRunwayParams({...runwayParams, avgIntervalIMC: v}), type: 'number', step: 0.1, min: 0.1 },
+                  { label: 'VMC procenat (%)', value: runwayParams.vmcPercentage, set: (v: number) => setRunwayParams({...runwayParams, vmcPercentage: v}), type: 'number', min: 0, max: 100 },
+                  { label: 'Faktor mješovitih operacija (0-1)', value: runwayParams.mixedOperationsFactor, set: (v: number) => setRunwayParams({...runwayParams, mixedOperationsFactor: v}), type: 'number', step: 0.01, min: 0.1, max: 1 },
+                  { label: 'Sigurnosni faktor (0-1)', value: runwayParams.safetyFactor, set: (v: number) => setRunwayParams({...runwayParams, safetyFactor: v}), type: 'number', step: 0.01, min: 0.1, max: 1 }
+                ].map((field, index) => (
+                  <div key={index}>
+                    <label className={`block text-sm font-medium mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                      {field.label}
+                    </label>
+                    <input
+                      type={field.type}
+                      step={field.step}
+                      min={field.min}
+                      max={field.max}
+                      value={field.value}
+                      onChange={(e) => field.set(safeParseFloat(e.target.value, field.value))}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${inputStyles[isLight ? 'light' : 'dark']}`}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Stand Parameters */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 🅿️ Parametri platformi
               </h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Contact stands
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={standParams.contactStands}
-                    onChange={(e) => setStandParams({...standParams, contactStands: safeParseInt(e.target.value, 6)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Remote stands
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={standParams.remoteStands}
-                    onChange={(e) => setStandParams({...standParams, remoteStands: safeParseInt(e.target.value, 8)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Prosječno vrijeme turnaround (min)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={standParams.avgTurnaroundTime}
-                    onChange={(e) => setStandParams({...standParams, avgTurnaroundTime: safeParseInt(e.target.value, 40)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Faktor iskorišćenosti (0-1)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.1"
-                    max="1"
-                    value={standParams.utilizationFactor}
-                    onChange={(e) => setStandParams({...standParams, utilizationFactor: safeParseFloat(e.target.value, 0.9)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Radno vrijeme (sati)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="24"
-                    value={standParams.operatingHours}
-                    onChange={(e) => setStandParams({...standParams, operatingHours: safeParseInt(e.target.value, 16)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+                {[
+                  { label: 'Contact stands', value: standParams.contactStands, set: (v: number) => setStandParams({...standParams, contactStands: v}), type: 'number', min: 0 },
+                  { label: 'Remote stands', value: standParams.remoteStands, set: (v: number) => setStandParams({...standParams, remoteStands: v}), type: 'number', min: 0 },
+                  { label: 'Prosječno vrijeme turnaround (min)', value: standParams.avgTurnaroundTime, set: (v: number) => setStandParams({...standParams, avgTurnaroundTime: v}), type: 'number', min: 1 },
+                  { label: 'Faktor iskorišćenosti (0-1)', value: standParams.utilizationFactor, set: (v: number) => setStandParams({...standParams, utilizationFactor: v}), type: 'number', step: 0.01, min: 0.1, max: 1 },
+                  { label: 'Radno vrijeme (sati)', value: standParams.operatingHours, set: (v: number) => setStandParams({...standParams, operatingHours: v}), type: 'number', min: 1, max: 24 }
+                ].map((field, index) => (
+                  <div key={index}>
+                    <label className={`block text-sm font-medium mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                      {field.label}
+                    </label>
+                    <input
+                      type={field.type}
+                      step={field.step}
+                      min={field.min}
+                      max={field.max}
+                      value={field.value}
+                      onChange={(e) => field.set(safeParseFloat(e.target.value, field.value))}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${inputStyles[isLight ? 'light' : 'dark']}`}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Terminal Parameters */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 🏢 Parametri terminala
               </h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Broj check-in šaltera
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={terminalParams.checkInCounters}
-                    onChange={(e) => setTerminalParams({...terminalParams, checkInCounters: safeParseInt(e.target.value, 24)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Broj security lanes
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={terminalParams.securityLanes}
-                    onChange={(e) => setTerminalParams({...terminalParams, securityLanes: safeParseInt(e.target.value, 4)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Putnika po šalteru/sat
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={terminalParams.paxPerCounterHour}
-                    onChange={(e) => setTerminalParams({...terminalParams, paxPerCounterHour: safeParseInt(e.target.value, 25)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Putnika po security lane/sat
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={terminalParams.paxPerSecurityHour}
-                    onChange={(e) => setTerminalParams({...terminalParams, paxPerSecurityHour: safeParseInt(e.target.value, 150)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+                {[
+                  { label: 'Broj check-in šaltera', value: terminalParams.checkInCounters, set: (v: number) => setTerminalParams({...terminalParams, checkInCounters: v}), type: 'number', min: 0 },
+                  { label: 'Broj security lanes', value: terminalParams.securityLanes, set: (v: number) => setTerminalParams({...terminalParams, securityLanes: v}), type: 'number', min: 0 },
+                  { label: 'Putnika po šalteru/sat', value: terminalParams.paxPerCounterHour, set: (v: number) => setTerminalParams({...terminalParams, paxPerCounterHour: v}), type: 'number', min: 0 },
+                  { label: 'Putnika po security lane/sat', value: terminalParams.paxPerSecurityHour, set: (v: number) => setTerminalParams({...terminalParams, paxPerSecurityHour: v}), type: 'number', min: 0 }
+                ].map((field, index) => (
+                  <div key={index}>
+                    <label className={`block text-sm font-medium mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                      {field.label}
+                    </label>
+                    <input
+                      type={field.type}
+                      min={field.min}
+                      value={field.value}
+                      onChange={(e) => field.set(safeParseInt(e.target.value, field.value))}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${inputStyles[isLight ? 'light' : 'dark']}`}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Demand Parameters */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 📈 Parametri potražnje
               </h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Trenutne operacije (peak hour)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={demandParams.currentOperations}
-                    onChange={(e) => setDemandParams({...demandParams, currentOperations: safeParseInt(e.target.value, 18)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stopa rasta (% godišnje)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={demandParams.growthRate}
-                    onChange={(e) => setDemandParams({...demandParams, growthRate: safeParseInt(e.target.value, 8)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Period projekcije (godine)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={demandParams.projectionYears}
-                    onChange={(e) => setDemandParams({...demandParams, projectionYears: safeParseInt(e.target.value, 3)})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+                {[
+                  { label: 'Trenutne operacije (peak hour)', value: demandParams.currentOperations, set: (v: number) => setDemandParams({...demandParams, currentOperations: v}), type: 'number', min: 0 },
+                  { label: 'Stopa rasta (% godišnje)', value: demandParams.growthRate, set: (v: number) => setDemandParams({...demandParams, growthRate: v}), type: 'number', min: 0 },
+                  { label: 'Period projekcije (godine)', value: demandParams.projectionYears, set: (v: number) => setDemandParams({...demandParams, projectionYears: v}), type: 'number', min: 1, max: 10 }
+                ].map((field, index) => (
+                  <div key={index}>
+                    <label className={`block text-sm font-medium mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                      {field.label}
+                    </label>
+                    <input
+                      type={field.type}
+                      min={field.min}
+                      max={field.max}
+                      value={field.value}
+                      onChange={(e) => field.set(safeParseInt(e.target.value, field.value))}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${inputStyles[isLight ? 'light' : 'dark']}`}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -698,124 +649,114 @@ KRAJ IZVJEŠTAJA
           {/* Results */}
           <div className="space-y-6">
             {/* Runway Capacity Results */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <BarChart3 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 Kapacitet piste
               </h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">VMC kapacitet:</span>
-                  <span className="font-bold text-gray-900">{runwayCapacity.vmcCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">IMC kapacitet:</span>
-                  <span className="font-bold text-gray-900">{runwayCapacity.imcCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">Ponderisani kapacitet:</span>
-                  <span className="font-bold text-gray-900">{runwayCapacity.weightedCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">Praktični kapacitet:</span>
-                  <span className="font-bold text-gray-900">{runwayCapacity.practicalCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded">
-                  <span className="text-blue-700 font-medium">Deklarisani kapacitet:</span>
-                  <span className="font-bold text-blue-900">{runwayCapacity.declaredCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded">
-                  <span className="text-green-700 font-medium">Dnevni kapacitet:</span>
-                  <span className="font-bold text-green-900">{runwayCapacity.dailyCapacity} operacija</span>
-                </div>
+                {[
+                  { label: 'VMC kapacitet:', value: runwayCapacity.vmcCapacity, style: statusCardStyles.gray },
+                  { label: 'IMC kapacitet:', value: runwayCapacity.imcCapacity, style: statusCardStyles.gray },
+                  { label: 'Ponderisani kapacitet:', value: runwayCapacity.weightedCapacity, style: statusCardStyles.gray },
+                  { label: 'Praktični kapacitet:', value: runwayCapacity.practicalCapacity, style: statusCardStyles.gray },
+                  { label: 'Deklarisani kapacitet:', value: runwayCapacity.declaredCapacity, style: statusCardStyles.blue },
+                  { label: 'Dnevni kapacitet:', value: runwayCapacity.dailyCapacity, style: statusCardStyles.green }
+                ].map((item, index) => (
+                  <div key={index} className={`flex justify-between items-center p-3 rounded ${
+                    isLight ? item.style.light : item.style.dark
+                  }`}>
+                    <span>{item.label}</span>
+                    <span className="font-bold">{item.value} {item.label.includes('kapacitet:') ? 'op/sat' : 'operacija'}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Stand Capacity Results */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 🅿️ Kapacitet platformi
               </h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">Ukupno parking pozicija:</span>
-                  <span className="font-bold text-gray-900">{standCapacity.totalStands}</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded">
-                  <span className="text-blue-700 font-medium">Satni kapacitet:</span>
-                  <span className="font-bold text-blue-900">{standCapacity.hourlyCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded">
-                  <span className="text-green-700 font-medium">Dnevni kapacitet:</span>
-                  <span className="font-bold text-green-900">{standCapacity.dailyCapacity} operacija</span>
-                </div>
+                {[
+                  { label: 'Ukupno parking pozicija:', value: standCapacity.totalStands, style: statusCardStyles.gray },
+                  { label: 'Satni kapacitet:', value: standCapacity.hourlyCapacity, style: statusCardStyles.blue },
+                  { label: 'Dnevni kapacitet:', value: standCapacity.dailyCapacity, style: statusCardStyles.green }
+                ].map((item, index) => (
+                  <div key={index} className={`flex justify-between items-center p-3 rounded ${
+                    isLight ? item.style.light : item.style.dark
+                  }`}>
+                    <span>{item.label}</span>
+                    <span className="font-bold">{item.value} {item.label.includes('pozicija:') ? '' : 'operacija'}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Terminal Capacity Results */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 🏢 Kapacitet terminala
               </h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">Check-in kapacitet:</span>
-                  <span className="font-bold text-gray-900">{terminalCapacity.checkInCapacity} pax/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <span className="text-gray-700">Security kapacitet:</span>
-                  <span className="font-bold text-gray-900">{terminalCapacity.securityCapacity} pax/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-orange-50 border border-orange-200 rounded">
-                  <span className="text-orange-700 font-medium">Usko grlo:</span>
-                  <span className="font-bold text-orange-900">{terminalCapacity.bottleneck} pax/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded">
-                  <span className="text-green-700 font-medium">Dnevni kapacitet:</span>
-                  <span className="font-bold text-green-900">{terminalCapacity.dailyCapacity} putnika</span>
-                </div>
+                {[
+                  { label: 'Check-in kapacitet:', value: terminalCapacity.checkInCapacity, style: statusCardStyles.gray },
+                  { label: 'Security kapacitet:', value: terminalCapacity.securityCapacity, style: statusCardStyles.gray },
+                  { label: 'Usko grlo:', value: terminalCapacity.bottleneck, style: statusCardStyles.orange },
+                  { label: 'Dnevni kapacitet:', value: terminalCapacity.dailyCapacity, style: statusCardStyles.green }
+                ].map((item, index) => (
+                  <div key={index} className={`flex justify-between items-center p-3 rounded ${
+                    isLight ? item.style.light : item.style.dark
+                  }`}>
+                    <span>{item.label}</span>
+                    <span className="font-bold">{item.value} {item.label.includes('putnika') ? 'putnika' : 'pax/sat'}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Overall Capacity Results */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 📊 Ukupni kapacitet
               </h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded">
-                  <span className="text-blue-700 font-medium">Satni kapacitet:</span>
-                  <span className="font-bold text-blue-900">{overallCapacity.hourlyCapacity} op/sat</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded">
-                  <span className="text-green-700 font-medium">Dnevni kapacitet:</span>
-                  <span className="font-bold text-green-900">{overallCapacity.dailyCapacity} operacija</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-red-50 border border-red-200 rounded">
-                  <span className="text-red-700 font-medium">Ograničavajući faktor:</span>
-                  <span className="font-bold text-red-900">{overallCapacity.limitingFactor}</span>
-                </div>
+                {[
+                  { label: 'Satni kapacitet:', value: overallCapacity.hourlyCapacity, style: statusCardStyles.blue },
+                  { label: 'Dnevni kapacitet:', value: overallCapacity.dailyCapacity, style: statusCardStyles.green },
+                  { label: 'Ograničavajući faktor:', value: overallCapacity.limitingFactor, style: statusCardStyles.red }
+                ].map((item, index) => (
+                  <div key={index} className={`flex justify-between items-center p-3 rounded ${
+                    isLight ? item.style.light : item.style.dark
+                  }`}>
+                    <span>{item.label}</span>
+                    <span className="font-bold">{item.value}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Demand Projections */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-purple-600" />
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                 Projekcije potražnje
               </h3>
               <div className="space-y-3">
                 {demandAnalysis.map((projection) => (
-                  <div key={projection.year} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                  <div key={projection.year} className={`flex justify-between items-center p-3 rounded ${
+                    isLight ? statusCardStyles.gray.light : statusCardStyles.gray.dark
+                  }`}>
                     <div>
-                      <span className="text-gray-700">Godina {projection.year}:</span>
-                      <span className="ml-2 font-bold text-gray-900">{projection.operations} op/sat</span>
+                      <span>Godina {projection.year}:</span>
+                      <span className="ml-2 font-bold">{projection.operations} op/sat</span>
                     </div>
                     <div className={`px-2 py-1 rounded text-sm font-medium ${
-                      projection.utilizationRate < 70 ? 'bg-green-100 text-green-800' :
-                      projection.utilizationRate < 85 ? 'bg-yellow-100 text-yellow-800' :
-                      projection.utilizationRate < 95 ? 'bg-orange-100 text-orange-800' :
-                      'bg-red-100 text-red-800'
+                      projection.utilizationRate < 70 ? (isLight ? 'bg-green-100 text-green-800' : 'bg-green-900/30 text-green-300') :
+                      projection.utilizationRate < 85 ? (isLight ? 'bg-yellow-100 text-yellow-800' : 'bg-yellow-900/30 text-yellow-300') :
+                      projection.utilizationRate < 95 ? (isLight ? 'bg-orange-100 text-orange-800' : 'bg-orange-900/30 text-orange-300') :
+                      (isLight ? 'bg-red-100 text-red-800' : 'bg-red-900/30 text-red-300')
                     }`}>
                       {projection.utilizationRate}%
                     </div>
@@ -825,11 +766,11 @@ KRAJ IZVJEŠTAJA
             </div>
 
             {/* Action Buttons */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className={`rounded-xl shadow-lg p-6 ${isLight ? cardStyles.light : cardStyles.dark}`}>
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   onClick={generateReport}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
                 >
                   <Download className="w-5 h-5" />
                   Preuzmi izvještaj
@@ -862,7 +803,7 @@ KRAJ IZVJEŠTAJA
                       projectionYears: 3
                     });
                   }}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium"
                 >
                   Resetuj parametre
                 </button>
