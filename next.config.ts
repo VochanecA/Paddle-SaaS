@@ -30,10 +30,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,  // build pada ako postoje TypeScript greške
   },
 
-  experimental: {
-    optimizeCss: true,         // optimizuje Tailwind i Flowbite CSS
-    // serverActions: true       // ❌ ukloniti za Next.js 15
-  },
+  // Ukloni experimental.optimizeCss jer uzrokuje probleme sa critters
+  // experimental: {
+  //   optimizeCss: true,         // ❌ Ovo uzrokuje critters error
+  // }
 };
 
 export default nextConfig;
