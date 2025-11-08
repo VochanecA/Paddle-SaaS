@@ -260,7 +260,16 @@ export async function POST(
           'X-Title': 'AI Service',
         },
         body: JSON.stringify({
-          model: model ?? 'deepseek/deepseek-chat-v3.1:free',
+  //* 'deepseek/deepseek-chat-v3.1:free',
+/*           z-ai/glm-4.5-air:free",
+            tngtech/deepseek-r1t2-chimera:free
+            tngtech/deepseek-r1t-chimera:free
+            deepseek/deepseek-chat-v3-0324:free
+            deepseek/deepseek-r1-0528:free */
+// deepseek/deepseek-r1-0528:free
+// minimax/minimax-m2:free
+ model: model ?? 'minimax/minimax-m2:free',
+
           messages,
           max_tokens: maxTokens ?? 1000,
           temperature: temperature ?? 0.7,

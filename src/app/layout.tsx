@@ -10,6 +10,7 @@ import Footer from '@/components/Footer'
 import { Analytics } from '@vercel/analytics/next'
 import { seoConfig } from '@/lib/seo'
 import ScrollToTop from '@/components/ScrollToTop';
+import { GDPRBanner } from '@/components/GDPRBanner';
 
 // Initialize Inter font with subsets and display settings
 const inter = Inter({
@@ -80,6 +81,7 @@ export default function RootLayout({
               <Analytics />
             </main>
             <Footer />
+              <GDPRBanner />
           </ToastProvider>
         </Providers>
       </body>
