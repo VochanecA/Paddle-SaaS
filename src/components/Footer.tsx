@@ -238,7 +238,7 @@ export default function Footer() {
 
         {/* Copyright */}
         <div className="mt-8 pt-6 text-center text-xs text-gray-500 dark:text-gray-500">
-          <p>© {new Date().getFullYear()} SaaS Starter. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Sass Starter by Alen. All rights reserved.</p>
         </div>
       </div>
     </footer>
