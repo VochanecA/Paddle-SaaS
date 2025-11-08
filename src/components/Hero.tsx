@@ -10,18 +10,27 @@ interface HeroText {
 }
 
 // Constants
+// Constants
 const HERO_TEXTS: readonly HeroText[] = [
   {
     heading: 'AI Medicinski Asistent za Hitne Slučajeve',
-    subheading: 'Trenutna AI analiza pacijenata, trijaža i preporuke za hitne medicinske slučajeve. Brže, pametnije i efikasnije.',
+    subheading: 'Trenutna AI analiza pacijenata, DICOM snimki i trijaža. Analizirajte RTG, CT, MR snimke uz napredne AI algoritme za brže i preciznije dijagnoze.',
   },
   {
-    heading: 'Revolucionarni AI za Medicinsku Procjenu',
-    subheading: 'Kombinujte snagu veštačke inteligencije sa medicinskim ekspertizom za brze i precizne dijagnostičke preporuke.',
+    heading: 'Revolucionarni AI za Analizu Medicinskih Snimki',
+    subheading: 'Napredna AI analiza DICOM formata - RTG, CT, MR i ultrazvuk. Automatsko prepoznavanje anomalija i generisanje detaljnih medicinskih izvještaja.',
   },
   {
-    heading: 'Pametna Trijaža i Analiza Pacijenata',
-    subheading: 'Automatska procjena hitnosti, analiza vitalnih znakova i personalizovane medicinske preporuke u realnom vremenu.',
+    heading: 'Pametna Trijaža i DICOM Analiza',
+    subheading: 'Kombinujte analizu vitalnih znakova sa AI analizom medicinskih snimki. Kompletno rješenje za brzu i preciznu medicinsku procjenu.',
+  },
+  {
+    heading: 'AI Analiza Medicinskih Slika u Realnom Vremenu',
+    subheading: 'Učitajte DICOM, PNG ili JPG snimke i dobijte trenutnu AI analizu. Detektujte fracture, tumore, anomalije i više sa visokom tačnošću.',
+  },
+  {
+    heading: 'Napredna DICOM Analiza sa Veštačkom Inteligencijom',
+    subheading: 'Specjalizovani AI modeli za različite modalitete: radiografije, CT skenovi, MRI, ultrazvuk. Detaljni nalazi i preporuke za svaku snimku.',
   },
 ] as const;
 
