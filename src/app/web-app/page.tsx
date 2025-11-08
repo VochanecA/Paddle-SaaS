@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
-import { HeartPulse, FlaskConical, Stethoscope, AlertTriangle, Syringe, Clipboard, Triangle, Wrench, Download, Phone, Languages } from 'lucide-react';
+import { HeartPulse, FlaskConical, Stethoscope, AlertTriangle, Syringe, Clipboard, Triangle, Wrench, Download, Phone, Languages, MapPin } from 'lucide-react';
 import Image from 'next/image';
+import MedicalImageAnalysis from '@/components/MedicalImageAnalysis';
 
 // Types
 interface AnalysisResult {
@@ -15,7 +16,215 @@ interface AnalysisResult {
   immediateActions: string[];
   differentialDiagnosis: string[];
   drugDosage: string;
+  triageLevel: 'immediate' | 'urgent' | 'routine';
+  triageExplanation: string;
 }
+
+// Translation system
+const translations = {
+  montenegrin: {
+    // Header
+    title: "AI Asistent za Hitne Slučajeve",
+    subtitle: "Unesite podatke o pacijentu za trenutnu AI-analizu i preporuke za hitne medicinske slučajeve",
+    
+    // Patient Data
+    patientData: "Podaci o pacijentu",
+    age: "Starost (godine)",
+    weight: "Težina (kg)",
+    gender: "Spol",
+    male: "Muški",
+    female: "Ženski",
+    other: "Ostalo",
+    allergies: "Poznate alergije",
+    medications: "Trenutne terapije",
+    allergiesPlaceholder: "Npr. penicilin",
+    medicationsPlaceholder: "Npr. metformin",
+    
+    // Location
+    location: "Lokacija pacijenta",
+    getLocation: "Dobij trenutnu lokaciju",
+    gettingLocation: "Dobijanje lokacije...",
+    remove: "Ukloni",
+    locationNote: "Lokacija će biti uključena u AI analizu i izvještaje",
+    
+    // Vitals
+    vitals: "Vitalni znakovi i protokol",
+    emergencyProtocol: "Protokol za hitne slučajeve",
+    selectProtocol: "Odaberite protokol...",
+    bloodPressure: "Krvni pritisak",
+    systolic: "Sistolički (gornji)",
+    diastolic: "Dijastolički (donji)",
+    heartRate: "Puls (bpm)",
+    temperature: "Temperatura (°C)",
+    bloodSugar: "Šećer u krvi",
+    
+    // Symptoms
+    symptoms: "Simptomi i bilješke",
+    selectSymptoms: "Odaberite simptome:",
+    notes: "Dodatne bilješke",
+    notesPlaceholder: "Unesite relevantne detalje o situaciji...",
+    
+    // Buttons
+    analyze: "Analiziraj podatke pacijenta",
+    analyzing: "Analiziranje podataka...",
+    pdfReport: "PDF Izvještaj",
+    generatingPdf: "Generiranje PDF-a...",
+    
+    // Results
+    conditionOverview: "Pregled stanja",
+    immediateActions: "Neposredne akcije",
+    differentialDiagnosis: "Diferencijalna dijagnoza",
+    recommendedMedication: "Preporučeni lijek",
+    keyTerms: "Ključne riječi",
+    riskAssessment: "Procjena rizika",
+    
+    // Emergency
+    emergencyNumbers: "Hitni brojevi",
+    clickToCall: "Kliknite za poziv",
+    importantNotice: "Važna napomena",
+    emergencyNotice: "U slučaju hitne medicinske situacije, odmah pozovite hitnu službu. Ovaj AI asistent služi isključivo za edukacijske i simulacijske svrhe.",
+    
+    // Triage
+    triage: "Trijaža",
+    immediateTriage: "HITNA TRIJAŽA",
+    urgentTriage: "URGENTNA TRIJAŽA",
+    routineTriage: "RUTINSKA TRIJAŽA",
+    immediateDesc: "Zahtijeva odmahnu medicinsku intervenciju",
+    urgentDesc: "Zahtijeva brzu medicinsku pažnju",
+    routineDesc: "Može sačekati redovnu medicinsku procjenu",
+    priority1: "PRIORITET 1",
+    priority2: "PRIORITET 2",
+    priority3: "PRIORITET 3",
+    triageExplanation: "Objašnjenje trijaže"
+  },
+  english: {
+    // Header
+    title: "AI Emergency Medical Assistant",
+    subtitle: "Enter patient data for immediate AI analysis and emergency medical recommendations",
+    
+    // Patient Data
+    patientData: "Patient Data",
+    age: "Age (years)",
+    weight: "Weight (kg)",
+    gender: "Gender",
+    male: "Male",
+    female: "Female",
+    other: "Other",
+    allergies: "Known Allergies",
+    medications: "Current Medications",
+    allergiesPlaceholder: "E.g. penicillin",
+    medicationsPlaceholder: "E.g. metformin",
+    
+    // Location
+    location: "Patient Location",
+    getLocation: "Get current location",
+    gettingLocation: "Getting location...",
+    remove: "Remove",
+    locationNote: "Location will be included in AI analysis and reports",
+    
+    // Vitals
+    vitals: "Vitals and Protocol",
+    emergencyProtocol: "Emergency Protocol",
+    selectProtocol: "Select protocol...",
+    bloodPressure: "Blood Pressure",
+    systolic: "Systolic (upper)",
+    diastolic: "Diastolic (lower)",
+    heartRate: "Heart Rate (bpm)",
+    temperature: "Temperature (°C)",
+    bloodSugar: "Blood Sugar",
+    
+    // Symptoms
+    symptoms: "Symptoms and Notes",
+    selectSymptoms: "Select symptoms:",
+    notes: "Additional Notes",
+    notesPlaceholder: "Enter relevant situation details...",
+    
+    // Buttons
+    analyze: "Analyze Patient Data",
+    analyzing: "Analyzing data...",
+    pdfReport: "PDF Report",
+    generatingPdf: "Generating PDF...",
+    
+    // Results
+    conditionOverview: "Condition Overview",
+    immediateActions: "Immediate Actions",
+    differentialDiagnosis: "Differential Diagnosis",
+    recommendedMedication: "Recommended Medication",
+    keyTerms: "Key Terms",
+    riskAssessment: "Risk Assessment",
+    
+    // Emergency
+    emergencyNumbers: "Emergency Numbers",
+    clickToCall: "Click to call",
+    importantNotice: "Important Notice",
+    emergencyNotice: "In case of a medical emergency, immediately call emergency services. This AI assistant is for educational and simulation purposes only.",
+    
+    // Triage
+    triage: "Triage",
+    immediateTriage: "IMMEDIATE TRIAGE",
+    urgentTriage: "URGENT TRIAGE",
+    routineTriage: "ROUTINE TRIAGE",
+    immediateDesc: "Requires immediate medical intervention",
+    urgentDesc: "Requires prompt medical attention",
+    routineDesc: "Can wait for regular medical assessment",
+    priority1: "PRIORITY 1",
+    priority2: "PRIORITY 2",
+    priority3: "PRIORITY 3",
+    triageExplanation: "Triage Explanation"
+  }
+};
+
+// Protocol options with translations
+const protocolOptions = {
+  montenegrin: [
+    { value: "", label: "Odaberite protokol..." },
+    { value: "Cardiac Arrest", label: "Srčani zastoj" },
+    { value: "Severe Bleeding", label: "Obilno krvarenje" },
+    { value: "Stroke", label: "Moždani udar" },
+    { value: "Diabetic Emergency", label: "Dijabetička kriza" },
+    { value: "Trauma", label: "Trauma" }
+  ],
+  english: [
+    { value: "", label: "Select protocol..." },
+    { value: "Cardiac Arrest", label: "Cardiac Arrest" },
+    { value: "Severe Bleeding", label: "Severe Bleeding" },
+    { value: "Stroke", label: "Stroke" },
+    { value: "Diabetic Emergency", label: "Diabetic Emergency" },
+    { value: "Trauma", label: "Trauma" }
+  ]
+};
+
+// Symptoms with translations
+const symptomOptions = {
+  montenegrin: [
+    'Glavobolja',
+    'Vrtoglavica',
+    'Kašalj',
+    'Groznica',
+    'Bol u grudima',
+    'Otežano disanje',
+    'Mučnina',
+    'Umor',
+    'Gubitak svijesti',
+    'Napadaji',
+    'Jaki bolovi',
+    'Poremećaj vida',
+  ],
+  english: [
+    'Headache',
+    'Dizziness',
+    'Cough',
+    'Fever',
+    'Chest pain',
+    'Difficulty breathing',
+    'Nausea',
+    'Fatigue',
+    'Loss of consciousness',
+    'Seizures',
+    'Severe pain',
+    'Vision problems',
+  ]
+};
 
 // Emergency numbers data
 const emergencyNumbers = {
@@ -43,8 +252,36 @@ const emergencyNumbers = {
   }
 };
 
+// Triage configuration
+const triageConfig = {
+  immediate: {
+    color: 'bg-red-500 border-red-600',
+    textColor: 'text-red-900 dark:text-red-100',
+    bgColor: 'bg-red-50 dark:bg-red-900/20',
+    borderColor: 'border-red-200 dark:border-red-800',
+    icon: AlertTriangle,
+    priority: 1
+  },
+  urgent: {
+    color: 'bg-orange-500 border-orange-600',
+    textColor: 'text-orange-900 dark:text-orange-100',
+    bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+    borderColor: 'border-orange-200 dark:border-orange-800',
+    icon: Stethoscope,
+    priority: 2
+  },
+  routine: {
+    color: 'bg-green-500 border-green-600',
+    textColor: 'text-green-900 dark:text-green-100',
+    bgColor: 'bg-green-50 dark:bg-green-900/20',
+    borderColor: 'border-green-200 dark:border-green-800',
+    icon: HeartPulse,
+    priority: 3
+  }
+};
+
 // Loading Spinner Component
-const LoadingSpinner = ({ message }: { message: string }) => (
+const LoadingSpinner = ({ message, language }: { message: string; language: 'montenegrin' | 'english' }) => (
   <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md mx-4 shadow-xl">
       <div className="flex flex-col items-center">
@@ -55,7 +292,7 @@ const LoadingSpinner = ({ message }: { message: string }) => (
           </div>
         </div>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-4 mb-2">
-          AI Medicinska Analiza
+          {language === 'montenegrin' ? 'AI Medicinska Analiza' : 'AI Medical Analysis'}
         </h3>
         <p className="text-gray-600 dark:text-gray-400 text-center text-sm mb-4">
           {message}
@@ -110,6 +347,8 @@ export default function MedicalAssistantDashboard() {
   const [isClient, setIsClient] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<'me' | 'eu'>('me');
   const [language, setLanguage] = useState<'montenegrin' | 'english'>('montenegrin');
+  const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number; address: string} | null>(null);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   // Inputs
   const [age, setAge] = useState<number>(30);
@@ -135,15 +374,29 @@ export default function MedicalAssistantDashboard() {
   const reportRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
 
+  const t = translations[language];
+  const currentSymptoms = symptomOptions[language];
+  const currentProtocols = protocolOptions[language];
+
   // Loading messages for better UX
-  const loadingMessages = [
-    "Analiziram vitalne znakove...",
-    "Procjenjujem simptome i rizike...",
-    "Generiram diferencijalnu dijagnozu...",
-    "Pripremam preporuke za hitne akcije...",
-    "Simuliram terapijske opcije...",
-    "Finaliziram medicinski izvještaj..."
-  ];
+  const loadingMessages = {
+    montenegrin: [
+      "Analiziram vitalne znakove...",
+      "Procjenjujem simptome i rizike...",
+      "Generiram diferencijalnu dijagnozu...",
+      "Pripremam preporuke za hitne akcije...",
+      "Simuliram terapijske opcije...",
+      "Finaliziram medicinski izvještaj..."
+    ],
+    english: [
+      "Analyzing vital signs...",
+      "Assessing symptoms and risks...",
+      "Generating differential diagnosis...",
+      "Preparing emergency action recommendations...",
+      "Simulating therapeutic options...",
+      "Finalizing medical report..."
+    ]
+  };
 
   // Set client-side flag to prevent hydration errors
   useEffect(() => {
@@ -155,17 +408,17 @@ export default function MedicalAssistantDashboard() {
     let interval: NodeJS.Timeout;
 
     if (isAnalyzing) {
-      setLoadingMessage(loadingMessages[0]);
+      setLoadingMessage(loadingMessages[language][0]);
       interval = setInterval(() => {
-        messageIndex = (messageIndex + 1) % loadingMessages.length;
-        setLoadingMessage(loadingMessages[messageIndex]);
+        messageIndex = (messageIndex + 1) % loadingMessages[language].length;
+        setLoadingMessage(loadingMessages[language][messageIndex]);
       }, 3000);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAnalyzing]);
+  }, [isAnalyzing, language]);
 
   // Auth check
   useEffect(() => {
@@ -182,6 +435,60 @@ export default function MedicalAssistantDashboard() {
     };
     fetchUser().catch(() => router.push('/auth/login'));
   }, [router]);
+
+  // Get user location
+  const getUserLocation = async () => {
+    if (!navigator.geolocation) {
+      setError(language === 'montenegrin' 
+        ? 'Geolokacija nije podržana u vašem pregledaču' 
+        : 'Geolocation is not supported in your browser'
+      );
+      return;
+    }
+
+    setIsGettingLocation(true);
+    
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      
+      // Reverse geocoding to get address
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=${language === 'montenegrin' ? 'sr' : 'en'}`
+        );
+        const data = await response.json();
+        
+        setUserLocation({
+          latitude,
+          longitude,
+          address: data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+        });
+      } catch {
+        // If reverse geocoding fails, just use coordinates
+        setUserLocation({
+          latitude,
+          longitude,
+          address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+        });
+      }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error: unknown) {
+      setError(language === 'montenegrin' 
+        ? 'Nije moguće dobiti lokaciju. Provjerite dozvolu za lokaciju.'
+        : 'Unable to get location. Please check location permissions.'
+      );
+    } finally {
+      setIsGettingLocation(false);
+    }
+  };
 
   // Chart drawing - only on client side
   useEffect(() => {
@@ -315,22 +622,6 @@ export default function MedicalAssistantDashboard() {
 
   }, [analysis, isClient]);
 
-  // Symptoms list
-  const allSymptoms = [
-    'Glavobolja',
-    'Vrtoglavica',
-    'Kašalj',
-    'Groznica',
-    'Bol u grudima',
-    'Otežano disanje',
-    'Mučnina',
-    'Umor',
-    'Gubitak svijesti',
-    'Napadaji',
-    'Jaki bolovi',
-    'Poremećaj vida',
-  ];
-
   function toggleSymptom(symptom: string) {
     setSymptoms((prev) =>
       prev.includes(symptom) ? prev.filter((s) => s !== symptom) : [...prev, symptom]
@@ -356,6 +647,18 @@ export default function MedicalAssistantDashboard() {
 
   // Get system prompt based on selected language
   const getSystemPrompt = () => {
+    const triageInstructions = language === 'montenegrin' 
+      ? `7. triageLevel (string): Nivo trijaže - "immediate" (hitno), "urgent" (urgentno) ili "routine" (rutinsko). Ocijenite na osnovu sledećih kriterijuma:
+         - immediate: životno ugrožavajuća stanja (srčani udar, teške traume, prestanak disanja)
+         - urgent: ozbiljna stanja koja zahtijevaju brzu intervenciju (jaki bolovi, visoka temperatura, dehidracija)
+         - routine: manje hitna stanja koja mogu sačekati (blagi simptomi, rutinske kontrole)
+      8. triageExplanation (string): Objašnjenje zašto je dodijeljen ovaj nivo trijaže na crnogorskom jeziku.`
+      : `7. triageLevel (string): Triage level - "immediate", "urgent", or "routine". Assess based on:
+         - immediate: Life-threatening conditions (cardiac arrest, severe trauma, respiratory arrest)
+         - urgent: Serious conditions requiring prompt attention (severe pain, high fever, dehydration)
+         - routine: Less urgent conditions that can wait (mild symptoms, routine checks)
+      8. triageExplanation (string): Explanation of why this triage level was assigned.`;
+
     if (language === 'montenegrin') {
       return `Vi ste Hitni Medicinski AI za prve pomagače. Vaš zadatak je da analizirate podatke o pacijentu i odmah pružite precizne, primjenjive smjernice. OBAVEZNO generišite odgovor na crnogorskom jeziku, koristeći LATINIČNO pismo.
 
@@ -366,6 +669,7 @@ Uvijek vratite jedan validan JSON objekat sa sljedećim ključevima:
 4. immediateActions (string[]): Lista sažetih, korak-po-korak mjera za prve pomagače na crnogorskom.
 5. differentialDiagnosis (string[]): Lista mogućih medicinskih stanja za razmatranje na crnogorskom.
 6. drugDosage (string): Preporuka za lijek i dozu na crnogorskom, npr. "Primijeniti 325 mg Aspirina." Obavezno uključiti napomenu da je simulacija.
+${triageInstructions}
 
 Sve predložene mjere i lijekovi moraju biti u skladu sa USA medical protocols i EU liječničkim protokolima za liječenje simptoma, koristeći lijekove koji su dostupni i registrovani na teritoriji EU.
 
@@ -380,6 +684,7 @@ Always return a single, valid JSON object with the following keys:
 4. immediateActions (string[]): A list of concise, step-by-step actions for the first responder.
 5. differentialDiagnosis (string[]): A list of possible medical conditions to consider.
 6. drugDosage (string): A simulated drug and dosage recommendation, e.g., "Administer 325 mg Aspirin." Always include a disclaimer that this is for simulation only.
+${triageInstructions}
 
 All proposed measures and medications must comply with USA medical protocols and EU medical treatment protocols for symptoms, using medications available and registered in the EU territory.
 
@@ -394,6 +699,10 @@ Based on the following patient data, generate the JSON response:`;
     setIsAnalyzing(true);
 
     try {
+      const locationInfo = userLocation 
+        ? `\n**Lokacija pacijenta:** ${userLocation.address} (${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)})`
+        : '';
+
       const messages = [
         {
           role: 'system',
@@ -416,6 +725,7 @@ Based on the following patient data, generate the JSON response:`;
             - Blood Sugar: ${getBloodSugarForAI()} mg/dL
             - Heart Rate: ${heartRate} bpm
             - Temperature: ${temperature} °C
+            ${locationInfo}
             
             **Additional Notes:** ${notes || 'None'}.
           `,
@@ -483,7 +793,10 @@ Based on the following patient data, generate the JSON response:`;
       pdf.save(`medicinski-izvjestaj-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('PDF generation failed:', error);
-      setError('Greška pri generiranju PDF-a. Pokušajte ponovno.');
+      setError(language === 'montenegrin' 
+        ? 'Greška pri generiranju PDF-a. Pokušajte ponovno.' 
+        : 'Error generating PDF. Please try again.'
+      );
     } finally {
       setExporting(null);
     }
@@ -494,57 +807,82 @@ Based on the following patient data, generate the JSON response:`;
     
     setExporting('markdown');
     
-    let markdownContent = `# Medicinski Izvještaj - AI Asistent\n\n`;
-    markdownContent += `**Datum izvještaja:** ${new Date().toLocaleString()}\n`;
-    markdownContent += `**Generirano pomoću:** AI Medicinski Asistent za Hitne Slučajeve\n\n`;
+    let markdownContent = `# ${language === 'montenegrin' ? 'Medicinski Izvještaj - AI Asistent' : 'Medical Report - AI Assistant'}\n\n`;
+    markdownContent += `**${language === 'montenegrin' ? 'Datum izvještaja' : 'Report Date'}:** ${new Date().toLocaleString()}\n`;
+    markdownContent += `**${language === 'montenegrin' ? 'Generirano pomoću' : 'Generated by'}:** AI Medicinski Asistent za Hitne Slučajeve\n\n`;
     
-    markdownContent += `## Podaci o pacijentu\n`;
-    markdownContent += `- **Starost:** ${age} godina\n`;
-    markdownContent += `- **Težina:** ${weight} kg\n`;
-    markdownContent += `- **Spol:** ${sex === 'male' ? 'Muški' : sex === 'female' ? 'Ženski' : 'Ostalo'}\n`;
-    markdownContent += `- **Alergije:** ${allergies || 'Nema'}\n`;
-    markdownContent += `- **Trenutne terapije:** ${medications || 'Nema'}\n\n`;
+    markdownContent += `## ${language === 'montenegrin' ? 'Podaci o pacijentu' : 'Patient Data'}\n`;
+    markdownContent += `- **${t.age}:** ${age}\n`;
+    markdownContent += `- **${t.weight}:** ${weight} kg\n`;
+    markdownContent += `- **${t.gender}:** ${sex === 'male' ? t.male : sex === 'female' ? t.female : t.other}\n`;
+    markdownContent += `- **${t.allergies}:** ${allergies || (language === 'montenegrin' ? 'Nema' : 'None')}\n`;
+    markdownContent += `- **${t.medications}:** ${medications || (language === 'montenegrin' ? 'Nema' : 'None')}\n`;
+    if (userLocation) {
+      markdownContent += `- **${t.location}:** ${userLocation.address}\n`;
+      markdownContent += `- **${language === 'montenegrin' ? 'Koordinate' : 'Coordinates'}:** ${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)}\n`;
+    }
+    markdownContent += `\n`;
     
-    markdownContent += `## Vitalni znakovi\n`;
-    markdownContent += `- **Krvni pritisak:** ${systolicBP}/${diastolicBP} mmHg\n`;
-    markdownContent += `- **Šećer u krvi:** ${bloodSugar} ${bloodSugarUnit === 'mgdl' ? 'mg/dL' : 'mmol/L'}\n`;
-    markdownContent += `- **Puls:** ${heartRate} bpm\n`;
-    markdownContent += `- **Temperatura:** ${temperature} °C\n`;
-    markdownContent += `- **Protokol:** ${emergencyProtocol || 'Nije odabran'}\n\n`;
+    markdownContent += `## ${language === 'montenegrin' ? 'Vitalni znakovi' : 'Vital Signs'}\n`;
+    markdownContent += `- **${t.bloodPressure}:** ${systolicBP}/${diastolicBP} mmHg\n`;
+    markdownContent += `- **${t.bloodSugar}:** ${bloodSugar} ${bloodSugarUnit === 'mgdl' ? 'mg/dL' : 'mmol/L'}\n`;
+    markdownContent += `- **${t.heartRate}:** ${heartRate} bpm\n`;
+    markdownContent += `- **${t.temperature}:** ${temperature} °C\n`;
+    markdownContent += `- **${t.emergencyProtocol}:** ${emergencyProtocol || (language === 'montenegrin' ? 'Nije odabran' : 'Not selected')}\n\n`;
     
-    markdownContent += `## Simptomi\n`;
-    markdownContent += `${symptoms.length > 0 ? symptoms.join(', ') : 'Nema odabranih simptoma'}\n\n`;
+    markdownContent += `## ${language === 'montenegrin' ? 'Simptomi' : 'Symptoms'}\n`;
+    markdownContent += `${symptoms.length > 0 ? symptoms.join(', ') : (language === 'montenegrin' ? 'Nema odabranih simptoma' : 'No symptoms selected')}\n\n`;
     
-    markdownContent += `## Sažetak stanja\n`;
+    markdownContent += `## ${t.triage}\n`;
+    const triageInfo = triageConfig[analysis.triageLevel];
+    const triageLabel = analysis.triageLevel === 'immediate' ? t.immediateTriage : 
+                       analysis.triageLevel === 'urgent' ? t.urgentTriage : t.routineTriage;
+    const triageDesc = analysis.triageLevel === 'immediate' ? t.immediateDesc : 
+                      analysis.triageLevel === 'urgent' ? t.urgentDesc : t.routineDesc;
+    const priority = analysis.triageLevel === 'immediate' ? t.priority1 : 
+                    analysis.triageLevel === 'urgent' ? t.priority2 : t.priority3;
+    
+    markdownContent += `- **${language === 'montenegrin' ? 'Nivo trijaže' : 'Triage Level'}:** ${triageLabel}\n`;
+    markdownContent += `- **${language === 'montenegrin' ? 'Opis' : 'Description'}:** ${triageDesc}\n`;
+    markdownContent += `- **${language === 'montenegrin' ? 'Prioritet' : 'Priority'}:** ${priority}\n`;
+    markdownContent += `- **${t.triageExplanation}:** ${analysis.triageExplanation}\n\n`;
+    
+    markdownContent += `## ${t.conditionOverview}\n`;
     markdownContent += `${analysis.summary}\n\n`;
     
-    markdownContent += `## Procjena rizika\n`;
+    markdownContent += `## ${language === 'montenegrin' ? 'Procjena rizika' : 'Risk Assessment'}\n`;
     analysis.risks.forEach((risk, index) => {
-      markdownContent += `${index + 1}. ${risk.label} (Ozbiljnost: ${risk.severity}/10)\n`;
+      markdownContent += `${index + 1}. ${risk.label} (${language === 'montenegrin' ? 'Ozbiljnost' : 'Severity'}: ${risk.severity}/10)\n`;
     });
     markdownContent += `\n`;
     
-    markdownContent += `## Hitne akcije\n`;
+    markdownContent += `## ${t.immediateActions}\n`;
     analysis.immediateActions.forEach((action, index) => {
       markdownContent += `${index + 1}. ${action}\n`;
     });
     markdownContent += `\n`;
     
-    markdownContent += `## Diferencijalna dijagnoza\n`;
+    markdownContent += `## ${t.differentialDiagnosis}\n`;
     analysis.differentialDiagnosis.forEach((diagnosis, index) => {
       markdownContent += `${index + 1}. ${diagnosis}\n`;
     });
     markdownContent += `\n`;
     
-    markdownContent += `## Preporučena terapija\n`;
+    markdownContent += `## ${t.recommendedMedication}\n`;
     markdownContent += `${analysis.drugDosage}\n\n`;
     
-    markdownContent += `## Ključni medicinski pojmovi\n`;
+    markdownContent += `## ${t.keyTerms}\n`;
     markdownContent += `${analysis.keywords.join(', ')}\n\n`;
     
     markdownContent += `---\n`;
-    markdownContent += `**Napomena:** Ovaj izvještaj je generiran AI sustavom i služi isključivo za edukacijske i simulacijske svrhe.\n`;
-    markdownContent += `Stvarne medicinske odluke moraju donositi kvalificirani zdravstveni djelatnici.\n`;
+    markdownContent += `**${language === 'montenegrin' ? 'Napomena' : 'Note'}:** ${language === 'montenegrin' 
+      ? 'Ovaj izvještaj je generiran AI sustavom i služi isključivo za edukacijske i simulacijske svrhe.'
+      : 'This report is generated by an AI system and is for educational and simulation purposes only.'
+    }\n`;
+    markdownContent += `${language === 'montenegrin' 
+      ? 'Stvarne medicinske odluke moraju donositi kvalificirani zdravstveni djelatnici.'
+      : 'Actual medical decisions must be made by qualified healthcare professionals.'
+    }\n`;
 
     const blob = new Blob([markdownContent], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -559,11 +897,73 @@ Based on the following patient data, generate the JSON response:`;
     setExporting(null);
   };
 
+  // Triage Card Component
+  const TriageCard = ({ analysis }: { analysis: AnalysisResult }) => {
+    const config = triageConfig[analysis.triageLevel];
+    const IconComponent = config.icon;
+    
+    const triageLabel = analysis.triageLevel === 'immediate' ? t.immediateTriage : 
+                       analysis.triageLevel === 'urgent' ? t.urgentTriage : t.routineTriage;
+    const triageDesc = analysis.triageLevel === 'immediate' ? t.immediateDesc : 
+                      analysis.triageLevel === 'urgent' ? t.urgentDesc : t.routineDesc;
+    const priority = analysis.triageLevel === 'immediate' ? t.priority1 : 
+                    analysis.triageLevel === 'urgent' ? t.priority2 : t.priority3;
+    
+    return (
+      <div className={`p-6 rounded-2xl border-2 ${config.bgColor} ${config.borderColor} shadow-lg transition-all duration-300 hover:shadow-xl`}>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center">
+            <div className={`w-12 h-12 ${config.color} rounded-full flex items-center justify-center mr-4 shadow-lg`}>
+              <IconComponent className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`text-xl font-bold ${config.textColor}`}>
+                {triageLabel}
+              </h3>
+              <p className={`text-sm ${config.textColor} opacity-80 mt-1`}>
+                {triageDesc}
+              </p>
+            </div>
+          </div>
+          <div className={`px-3 py-1 rounded-full ${config.color} text-white text-sm font-bold shadow-sm`}>
+            {priority}
+          </div>
+        </div>
+        
+        <div className="mt-4 p-4 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700">
+          <h4 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+            <Stethoscope className="w-4 h-4 mr-2" />
+            {t.triageExplanation}
+          </h4>
+          <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+            {analysis.triageExplanation}
+          </p>
+        </div>
+        
+        {analysis.triageLevel === 'immediate' && (
+          <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="flex items-center">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2 flex-shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+                {language === 'montenegrin' 
+                  ? '⚠️ HITNO: Ovo stanje zahtijeva odmahnu medicinsku intervenciju!'
+                  : '⚠️ IMMEDIATE: This condition requires immediate medical intervention!'
+                }
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Show loading state until client-side rendering is ready
   if (!isClient || isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-gray-900 dark:to-gray-800">
-        <div className="text-xl text-gray-700 dark:text-gray-200">Učitavanje...</div>
+        <div className="text-xl text-gray-700 dark:text-gray-200">
+          {language === 'montenegrin' ? 'Učitavanje...' : 'Loading...'}
+        </div>
       </div>
     );
   }
@@ -571,7 +971,7 @@ Based on the following patient data, generate the JSON response:`;
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       {/* Loading Spinner */}
-      {isAnalyzing && <LoadingSpinner message={loadingMessage} />}
+      {isAnalyzing && <LoadingSpinner message={loadingMessage} language={language} />}
       
       <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Header */}
@@ -579,51 +979,50 @@ Based on the following patient data, generate the JSON response:`;
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
             <div className="flex-1">
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-                AI Asistent za{' '}
+                {t.title}{' '}
                 <span className="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                  Hitne Slučajeve
+                  AI
                 </span>
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-                Unesite podatke o pacijentu za trenutnu AI-analizu i preporuke za hitne medicinske slučajeve
+                {t.subtitle}
               </p>
             </div>
             
             {/* Language Selector */}
-<div className="flex justify-center sm:justify-end mt-4 sm:mt-0">
-  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1">
-    <button
-      onClick={() => setLanguage('montenegrin')}
-      className={`flex items-center px-4 py-2 rounded-lg transition-all ${
-        language === 'montenegrin'
-          ? 'bg-blue-600 text-white shadow-lg'
-          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-      }`}
-      title="Generiši AI odgovor na crnogorskom jeziku"
-    >
-      <Languages className="w-4 h-4 mr-2" />
-      <span className="font-medium">ME</span>
-      <span className="ml-2 text-xs opacity-80 hidden sm:inline">
-        (AI odgovor)
-      </span>
-    </button>
-    <button
-      onClick={() => setLanguage('english')}
-      className={`flex items-center px-4 py-2 rounded-lg transition-all ${
-        language === 'english'
-          ? 'bg-blue-600 text-white shadow-lg'
-          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-      }`}
-      title="Generate AI response in English"
-    >
-      <span className="font-medium">EN</span>
-      <span className="ml-2 text-xs opacity-80 hidden sm:inline">
-        (AI response)
-      </span>
-    </button>
-  </div>
-</div>
-
+            <div className="flex justify-center sm:justify-end mt-4 sm:mt-0">
+              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1">
+                <button
+                  onClick={() => setLanguage('montenegrin')}
+                  className={`flex items-center px-4 py-2 rounded-lg transition-all ${
+                    language === 'montenegrin'
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                  title="Generiši AI odgovor na crnogorskom jeziku"
+                >
+                  <Languages className="w-4 h-4 mr-2" />
+                  <span className="font-medium">ME</span>
+                  <span className="ml-2 text-xs opacity-80 hidden sm:inline">
+                    (AI odgovor)
+                  </span>
+                </button>
+                <button
+                  onClick={() => setLanguage('english')}
+                  className={`flex items-center px-4 py-2 rounded-lg transition-all ${
+                    language === 'english'
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                  title="Generate AI response in English"
+                >
+                  <span className="font-medium">EN</span>
+                  <span className="ml-2 text-xs opacity-80 hidden sm:inline">
+                    (AI response)
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -632,11 +1031,11 @@ Based on the following patient data, generate the JSON response:`;
           <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
             <h2 className="text-xl font-semibold mb-4 flex items-center">
               <Clipboard className="w-6 h-6 mr-3 text-blue-500" />
-              <span className="text-gray-900 dark:text-white">Podaci o pacijentu</span>
+              <span className="text-gray-900 dark:text-white">{t.patientData}</span>
             </h2>
             <div className="space-y-4">
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Starost (godine)</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.age}</label>
                 <input 
                   type="number" 
                   value={age} 
@@ -645,7 +1044,7 @@ Based on the following patient data, generate the JSON response:`;
                 />
               </div>
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Težina (kg)</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.weight}</label>
                 <input 
                   type="number" 
                   value={weight} 
@@ -654,36 +1053,89 @@ Based on the following patient data, generate the JSON response:`;
                 />
               </div>
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Spol</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.gender}</label>
                 <select 
                   value={sex} 
                   onChange={(e) => setSex(e.target.value as 'male' | 'female' | 'other')} 
                   className="w-full p-3 text-lg rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-gray-900 dark:text-white"
                 >
-                  <option value="male">Muški</option>
-                  <option value="female">Ženski</option>
-                  <option value="other">Ostalo</option>
+                  <option value="male">{t.male}</option>
+                  <option value="female">{t.female}</option>
+                  <option value="other">{t.other}</option>
                 </select>
               </div>
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Poznate alergije</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.allergies}</label>
                 <input 
                   type="text" 
                   value={allergies} 
                   onChange={(e) => setAllergies(e.target.value)} 
-                  placeholder="Npr. penicilin" 
+                  placeholder={t.allergiesPlaceholder}
                   className="w-full p-3 text-lg rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                 />
               </div>
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Trenutne terapije</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.medications}</label>
                 <input 
                   type="text" 
                   value={medications} 
                   onChange={(e) => setMedications(e.target.value)} 
-                  placeholder="Npr. metformin" 
+                  placeholder={t.medicationsPlaceholder}
                   className="w-full p-3 text-lg rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                 />
+              </div>
+
+              {/* Location Section */}
+              <div className="pt-4 border-t border-gray-200 dark:border-gray-600">
+                <label className="block mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {t.location}
+                </label>
+                {userLocation ? (
+                  <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+                    <div className="flex items-start">
+                      <MapPin className="w-5 h-5 text-green-600 dark:text-green-400 mr-2 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-green-800 dark:text-green-300 text-sm font-medium">
+                          {userLocation.address}
+                        </p>
+                        <p className="text-green-600 dark:text-green-400 text-xs mt-1">
+                          {userLocation.latitude.toFixed(6)}, {userLocation.longitude.toFixed(6)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setUserLocation(null)}
+                        className="text-red-500 hover:text-red-700 text-sm font-medium"
+                      >
+                        {t.remove}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={getUserLocation}
+                    disabled={isGettingLocation}
+                    className="w-full p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {isGettingLocation ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-3"></div>
+                        <span className="text-blue-700 dark:text-blue-300 font-medium">
+                          {t.gettingLocation}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3" />
+                        <span className="text-blue-700 dark:text-blue-300 font-medium">
+                          {t.getLocation}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  {t.locationNote}
+                </p>
               </div>
             </div>
           </div>
@@ -692,33 +1144,32 @@ Based on the following patient data, generate the JSON response:`;
           <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
             <h2 className="text-xl font-semibold mb-4 flex items-center">
               <HeartPulse className="w-6 h-6 mr-3 text-blue-500" />
-              <span className="text-gray-900 dark:text-white">Vitalni znakovi i protokol</span>
+              <span className="text-gray-900 dark:text-white">{t.vitals}</span>
             </h2>
             <div className="space-y-6">
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Protokol za hitne slučajeve</label>
+                <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.emergencyProtocol}</label>
                 <select 
                   value={emergencyProtocol} 
                   onChange={(e) => setEmergencyProtocol(e.target.value)} 
                   className="w-full p-3 text-lg rounded-xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-gray-900 dark:text-white"
                 >
-                  <option value="">Odaberite protokol...</option>
-                  <option value="Cardiac Arrest">Srčani zastoj</option>
-                  <option value="Severe Bleeding">Obilno krvarenje</option>
-                  <option value="Stroke">Moždani udar</option>
-                  <option value="Diabetic Emergency">Dijabetička kriza</option>
-                  <option value="Trauma">Trauma</option>
+                  {currentProtocols.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               
               {/* Blood Pressure with two sliders */}
               <div>
                 <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Krvni pritisak: <span className="font-bold text-blue-600 text-lg">{systolicBP}/{diastolicBP} mmHg</span>
+                  {t.bloodPressure}: <span className="font-bold text-blue-600 text-lg">{systolicBP}/{diastolicBP} mmHg</span>
                 </label>
                 <div className="space-y-4">
                   <div>
-                    <label className="block mb-1 text-xs text-gray-500 dark:text-gray-400">Sistolički (gornji)</label>
+                    <label className="block mb-1 text-xs text-gray-500 dark:text-gray-400">{t.systolic}</label>
                     <input
                       type="range"
                       min={80}
@@ -733,7 +1184,7 @@ Based on the following patient data, generate the JSON response:`;
                     </div>
                   </div>
                   <div>
-                    <label className="block mb-1 text-xs text-gray-500 dark:text-gray-400">Dijastolički (donji)</label>
+                    <label className="block mb-1 text-xs text-gray-500 dark:text-gray-400">{t.diastolic}</label>
                     <input
                       type="range"
                       min={50}
@@ -751,8 +1202,8 @@ Based on the following patient data, generate the JSON response:`;
               </div>
 
               {[
-                { label: 'Puls (bpm)', value: heartRate, setter: setHeartRate, min: 40, max: 150 },
-                { label: 'Temperatura (°C)', value: temperature, setter: setTemperature, min: 35, max: 41 },
+                { label: t.heartRate, value: heartRate, setter: setHeartRate, min: 40, max: 150 },
+                { label: t.temperature, value: temperature, setter: setTemperature, min: 35, max: 41 },
               ].map((vital) => (
                 <div key={vital.label}>
                   <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -777,7 +1228,7 @@ Based on the following patient data, generate the JSON response:`;
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Šećer u krvi: <span className="font-bold text-blue-600 text-lg">{bloodSugar} {bloodSugarUnit === 'mgdl' ? 'mg/dL' : 'mmol/L'}</span>
+                    {t.bloodSugar}: <span className="font-bold text-blue-600 text-lg">{bloodSugar} {bloodSugarUnit === 'mgdl' ? 'mg/dL' : 'mmol/L'}</span>
                   </label>
                   <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                     <button
@@ -823,12 +1274,12 @@ Based on the following patient data, generate the JSON response:`;
           <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
             <h2 className="text-xl font-semibold mb-4 flex items-center">
               <Stethoscope className="w-6 h-6 mr-3 text-blue-500" />
-              <span className="text-gray-900 dark:text-white">Simptomi i bilješke</span>
+              <span className="text-gray-900 dark:text-white">{t.symptoms}</span>
             </h2>
             <div className="mb-6">
-              <p className="text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">Odaberite simptome:</p>
+              <p className="text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">{t.selectSymptoms}</p>
               <div className="grid grid-cols-2 gap-3">
-                {allSymptoms.map((symptom) => (
+                {currentSymptoms.map((symptom) => (
                   <label
                     key={symptom}
                     className={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${
@@ -844,12 +1295,12 @@ Based on the following patient data, generate the JSON response:`;
               </div>
             </div>
             <div>
-              <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Dodatne bilješke</label>
+              <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">{t.notes}</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="w-full p-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all min-h-[120px] text-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-                placeholder="Unesite relevantne detalje o situaciji..."
+                placeholder={t.notesPlaceholder}
               />
             </div>
           </div>
@@ -866,10 +1317,10 @@ Based on the following patient data, generate the JSON response:`;
           {isAnalyzing ? (
             <>
               <Wrench className="w-6 h-6 mr-3 animate-spin" />
-              {language === 'montenegrin' ? 'Analiziranje podataka...' : 'Analyzing data...'}
+              {t.analyzing}
             </>
           ) : (
-            language === 'montenegrin' ? 'Analiziraj podatke pacijenta' : 'Analyze Patient Data'
+            t.analyze
           )}
         </button>
 
@@ -879,7 +1330,9 @@ Based on the following patient data, generate the JSON response:`;
             <div className="p-6 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-2xl mb-6 flex items-center shadow-lg">
               <AlertTriangle className="w-6 h-6 mr-3" />
               <div>
-                <div className="font-medium text-lg">Greška:</div>
+                <div className="font-medium text-lg">
+                  {language === 'montenegrin' ? 'Greška:' : 'Error:'}
+                </div>
                 <div className="text-sm mt-1">{error}</div>
               </div>
             </div>
@@ -896,12 +1349,12 @@ Based on the following patient data, generate the JSON response:`;
                   {exporting === 'pdf' ? (
                     <>
                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
-                      {language === 'montenegrin' ? 'Generiranje PDF-a...' : 'Generating PDF...'}
+                      {t.generatingPdf}
                     </>
                   ) : (
                     <>
                       <Download className="w-5 h-5 mr-2" />
-                      PDF {language === 'montenegrin' ? 'Izvještaj' : 'Report'}
+                      {t.pdfReport}
                     </>
                   )}
                 </button>
@@ -917,12 +1370,17 @@ Based on the following patient data, generate the JSON response:`;
                 </button>
               </div>
 
+              {/* Triage Card - Prominent Display */}
+              <div className="mb-8">
+                <TriageCard analysis={analysis} />
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
                   <h2 className="text-xl font-bold mb-3 flex items-center">
                     <HeartPulse className="w-6 h-6 mr-3 text-blue-500" />
                     <span className="text-gray-900 dark:text-white">
-                      {language === 'montenegrin' ? 'Pregled stanja' : 'Condition Overview'}
+                      {t.conditionOverview}
                     </span>
                   </h2>
                   <p className="text-gray-800 dark:text-gray-200 text-lg leading-relaxed">{analysis.summary}</p>
@@ -931,7 +1389,7 @@ Based on the following patient data, generate the JSON response:`;
                   <h2 className="text-xl font-bold mb-3 flex items-center">
                     <Triangle className="w-6 h-6 mr-3 text-blue-500" />
                     <span className="text-gray-900 dark:text-white">
-                      {language === 'montenegrin' ? 'Neposredne akcije' : 'Immediate Actions'}
+                      {t.immediateActions}
                     </span>
                   </h2>
                   <ul className="space-y-2 text-lg">
@@ -951,7 +1409,7 @@ Based on the following patient data, generate the JSON response:`;
                 <h2 className="text-xl font-bold mb-3 flex items-center">
                   <Stethoscope className="w-6 h-6 mr-3 text-blue-500" />
                   <span className="text-gray-900 dark:text-white">
-                    {language === 'montenegrin' ? 'Diferencijalna dijagnoza' : 'Differential Diagnosis'}
+                    {t.differentialDiagnosis}
                   </span>
                 </h2>
                 <ul className="list-disc list-inside text-gray-800 dark:text-gray-200 space-y-2 text-lg">
@@ -966,7 +1424,7 @@ Based on the following patient data, generate the JSON response:`;
                   <h2 className="text-xl font-bold mb-3 flex items-center">
                     <Syringe className="w-6 h-6 mr-3 text-blue-500" />
                     <span className="text-gray-900 dark:text-white">
-                      {language === 'montenegrin' ? 'Preporučeni lijek' : 'Recommended Medication'}
+                      {t.recommendedMedication}
                     </span>
                   </h2>
                   <p className="text-gray-800 dark:text-gray-200 font-semibold text-lg p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
@@ -975,7 +1433,7 @@ Based on the following patient data, generate the JSON response:`;
                 </div>
                 <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
                   <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
-                    {language === 'montenegrin' ? 'Ključne riječi' : 'Key Terms'}
+                    {t.keyTerms}
                   </h2>
                   <div className="flex flex-wrap gap-3">
                     {analysis.keywords.map((kw, i) => (
@@ -992,7 +1450,7 @@ Based on the following patient data, generate the JSON response:`;
               
               <div className="p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
                 <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
-                  {language === 'montenegrin' ? 'Procjena rizika' : 'Risk Assessment'}
+                  {t.riskAssessment}
                 </h2>
                 <div className="relative">
                   <canvas
@@ -1005,12 +1463,17 @@ Based on the following patient data, generate the JSON response:`;
           )}
         </div>
 
+        {/* Medical Image Analysis Section */}
+        <div className="mt-10">
+          <MedicalImageAnalysis language={language} />
+        </div>
+
         {/* Emergency Numbers Section */}
         <div className="mt-12 p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-0 flex items-center">
               <Phone className="w-6 h-6 mr-3 text-blue-500" />
-              {language === 'montenegrin' ? 'Hitni brojevi' : 'Emergency Numbers'}
+              {t.emergencyNumbers}
             </h2>
             
             {/* Country Selector */}
@@ -1075,7 +1538,7 @@ Based on the following patient data, generate the JSON response:`;
                     {emergency.number}
                   </div>
                   <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {language === 'montenegrin' ? 'Kliknite za poziv' : 'Click to call'}
+                    {t.clickToCall}
                   </div>
                 </div>
               </div>
@@ -1087,13 +1550,10 @@ Based on the following patient data, generate the JSON response:`;
               <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3 mt-0.5 flex-shrink-0" />
               <div>
                 <h4 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
-                  {language === 'montenegrin' ? 'Važna napomena' : 'Important Notice'}
+                  {t.importantNotice}
                 </h4>
                 <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                  {language === 'montenegrin' 
-                    ? 'U slučaju hitne medicinske situacije, odmah pozovite hitnu službu. Ovaj AI asistent služi isključivo za edukacijske i simulacijske svrhe.'
-                    : 'In case of a medical emergency, immediately call emergency services. This AI assistant is for educational and simulation purposes only.'
-                  }
+                  {t.emergencyNotice}
                 </p>
               </div>
             </div>
