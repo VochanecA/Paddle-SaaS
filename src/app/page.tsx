@@ -9,7 +9,7 @@ import Link from 'next/link';
 export const dynamic = "force-static";
 
 /**
- * HomePage component - The main landing page for the SaaS Starter Kit
+ * HomePage component - The main landing page for the Moj Medicinski AI Kit
  * Includes Hero section, Features section with animated backgrounds, and CTAs
  * Optimized for performance, accessibility, and SEO
  */

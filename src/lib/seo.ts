@@ -6,15 +6,15 @@ const baseUrl = process.env.NEXT_PUBLIC_URL || 'https://yourdomain.com'
 export const seoConfig: Metadata = {
   metadataBase: new URL(baseUrl),
   title: {
-    default: 'My SaaS',
-    template: '%s | My SaaS',
+    default: 'Moj Medicinski AI',
+    template: '%s | Moj Medicinski AI',
   },
   description:
-    'Discover the awesome features of My SaaS app, designed to boost your productivity and streamline workflows.',
+    'Discover the awesome features of Moj Medicinski AI app, designed to boost your productivity and streamline workflows.',
   keywords: ['SaaS', 'productivity', 'web app', 'subscription', 'business tools'],
-  authors: [{ name: 'My SaaS Team', url: baseUrl }],
-  creator: 'My SaaS',
-  publisher: 'My SaaS',
+  authors: [{ name: 'Moj Medicinski AI Team', url: baseUrl }],
+  creator: 'Moj Medicinski AI',
+  publisher: 'Moj Medicinski AI',
   robots: {
     index: true,
     follow: true,
@@ -27,17 +27,17 @@ export const seoConfig: Metadata = {
     },
   },
   openGraph: {
-    title: 'My SaaS',
+    title: 'Moj Medicinski AI',
     description:
       'Awesome SaaS app for productivity and workflow efficiency.',
     url: baseUrl,
-    siteName: 'My SaaS',
+    siteName: 'Moj Medicinski AI',
     images: [
       {
         url: '/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'My SaaS App Preview',
+        alt: 'Moj Medicinski AI App Preview',
       },
     ],
     locale: 'en_US',
@@ -45,7 +45,7 @@ export const seoConfig: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'My SaaS',
+    title: 'Moj Medicinski AI',
     description:
       'Awesome SaaS app for productivity and workflow efficiency.',
     images: ['/og-image.jpg'],

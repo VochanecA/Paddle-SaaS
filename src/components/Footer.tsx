@@ -65,14 +65,14 @@ export default function Footer() {
               <div className="relative h-10 w-10">
                 <Image
                   src="/favicon.ico"
-                  alt="SaaS Starter Logo"
+                  alt="Moj Medicinski AI Logo"
                   fill
                   className="object-contain"
                   priority
                 />
               </div>
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                SaaS Starter
+                Moj Medicinski AI
               </span>
             </div>
             <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>

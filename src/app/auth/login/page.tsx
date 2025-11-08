@@ -53,7 +53,7 @@ export default function LoginPage() {
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex justify-center">
             <Link href="/" className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">
-              SaaS Starter
+              Moj Medicinski AI
             </Link>
           </div>
         </div>
@@ -68,7 +68,7 @@ export default function LoginPage() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <Link href="/" className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">
-            SaaS Starter
+            Moj Medicinski AI
           </Link>
         </div>
 

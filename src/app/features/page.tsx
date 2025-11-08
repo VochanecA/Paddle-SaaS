@@ -6,17 +6,17 @@ import Image from 'next/image';
 import { getNextVersion } from '@/lib/getNextVersion';
 
 export const metadata: Metadata = {
-  title: 'Features | SaaS Starter Kit',
-  description: 'Explore all the powerful features of our SaaS Starter Kit platform',
+  title: 'Features | Moj Medicinski AI Kit',
+  description: 'Explore all the powerful features of our Moj Medicinski AI Kit platform',
   openGraph: {
-    title: 'Features | SaaS Starter Kit',
-    description: 'Explore all the powerful features of our SaaS Starter Kit platform',
+    title: 'Features | Moj Medicinski AI Kit',
+    description: 'Explore all the powerful features of our Moj Medicinski AI Kit platform',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Features | SaaS Starter Kit',
-    description: 'Explore all the powerful features of our SaaS Starter Kit platform',
+    title: 'Features | Moj Medicinski AI Kit',
+    description: 'Explore all the powerful features of our Moj Medicinski AI Kit platform',
   },
 };
 

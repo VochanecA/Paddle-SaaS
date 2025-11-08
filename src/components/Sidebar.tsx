@@ -55,7 +55,7 @@ export function Sidebar({ subscriptions = [] }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
         <Link href="/" className="text-xl font-bold text-blue-600 dark:text-blue-400">
-          SaaS Starter
+          Moj Medicinski AI
         </Link>
       </div>
 

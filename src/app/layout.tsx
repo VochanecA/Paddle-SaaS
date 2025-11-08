@@ -32,7 +32,7 @@ export default function RootLayout({
   const schemaData = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'My SaaS',
+    name: 'Moj Medicinski AI',
     url: baseUrl,
     logo: `${baseUrl}/logo.png`,
     sameAs: [
@@ -57,10 +57,10 @@ export default function RootLayout({
         />
 
         {/* ✅ PWA + Performance meta */}
-        <meta name="application-name" content="My SaaS" />
+        <meta name="application-name" content="Moj Medicinski AI" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="My SaaS" />
+        <meta name="apple-mobile-web-app-title" content="Moj Medicinski AI" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileColor" content="#ffffff" />

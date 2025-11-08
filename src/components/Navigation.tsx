@@ -175,7 +175,7 @@ const handleLogout = async (): Promise<void> => {
           className="text-2xl font-bold text-blue-800 dark:text-blue-400 flex items-center gap-2 z-20 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
         >
           <Rocket className="w-7 h-7" />
-          SaaS Starter
+          Moj Medicinski AI
         </Link>
         
         {/* Desktop Menu */}
