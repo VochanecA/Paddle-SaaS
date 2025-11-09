@@ -7,6 +7,9 @@ import type { User } from '@supabase/supabase-js';
 import { HeartPulse, FlaskConical, Stethoscope, AlertTriangle, Syringe, Clipboard, Triangle, Wrench, Download, Phone, Languages, MapPin } from 'lucide-react';
 import Image from 'next/image';
 import MedicalImageAnalysis from '@/components/MedicalImageAnalysis';
+import VitalSignsMonitor from '@/components/VitalSignsMonitor';
+import EmergencyProtocols from '@/components/EmergencyProtocols';
+import DrugInteractions from '@/components/DrugInteractions';
 
 // Types
 interface AnalysisResult {
@@ -1467,6 +1470,15 @@ Based on the following patient data, generate the JSON response:`;
         <div className="mt-10">
           <MedicalImageAnalysis language={language} />
         </div>
+          <VitalSignsMonitor realTime={true} language={language} />
+  
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    {/* Emergency Protocols */}
+    <EmergencyProtocols language={language} />
+    
+    {/* Drug Interactions */}
+    <DrugInteractions language={language} />
+  </div>
 
         {/* Emergency Numbers Section */}
         <div className="mt-12 p-6 bg-white/90 dark:bg-gray-900/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg transition-colors duration-300">
