@@ -315,7 +315,7 @@ export default function VitalSignsMonitor({
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
           <Activity className="w-6 h-6 text-blue-500" />
-          {language === 'montenegrin' ? 'Monitor Vitalnih Znakova' : 'Vital Signs Monitor'}
+          {language === 'montenegrin' ? 'Monitor Vitalnih Znakova-DEMO ** NISU STVARNI PODACI**' : 'Vital Signs Monitor-DEMO ** NOT REAL DATA**'}
         </h3>
         
         <div className="flex items-center gap-4">

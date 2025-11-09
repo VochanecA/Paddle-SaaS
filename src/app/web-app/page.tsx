@@ -10,6 +10,7 @@ import MedicalImageAnalysis from '@/components/MedicalImageAnalysis';
 import VitalSignsMonitor from '@/components/VitalSignsMonitor';
 import EmergencyProtocols from '@/components/EmergencyProtocols';
 import DrugInteractions from '@/components/DrugInteractions';
+import Telemedicine from '@/components/Telemedicine';
 
 // Types
 interface AnalysisResult {
@@ -1471,7 +1472,7 @@ Based on the following patient data, generate the JSON response:`;
           <MedicalImageAnalysis language={language} />
         </div>
           <VitalSignsMonitor realTime={true} language={language} />
-  
+      {/* <Telemedicine language={language} /> */}
   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
     {/* Emergency Protocols */}
     <EmergencyProtocols language={language} />
@@ -1568,8 +1569,11 @@ Based on the following patient data, generate the JSON response:`;
                   {t.emergencyNotice}
                 </p>
               </div>
+    
             </div>
+            
           </div>
+                           <Telemedicine language={language} />
         </div>
       </main>
     </div>
