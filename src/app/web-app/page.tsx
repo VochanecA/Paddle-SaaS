@@ -11,6 +11,7 @@ import VitalSignsMonitor from '@/components/VitalSignsMonitor';
 import EmergencyProtocols from '@/components/EmergencyProtocols';
 import DrugInteractions from '@/components/DrugInteractions';
 import Telemedicine from '@/components/Telemedicine';
+import GeneralDiagnosis from '@/components/Diagnosis';
 
 // Types
 interface AnalysisResult {
@@ -1573,7 +1574,7 @@ Based on the following patient data, generate the JSON response:`;
             </div>
             
           </div>
-                           <Telemedicine language={language} />
+                           <GeneralDiagnosis language={language} />
         </div>
       </main>
     </div>
