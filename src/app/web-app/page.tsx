@@ -12,7 +12,7 @@ import EmergencyProtocols from '@/components/EmergencyProtocols';
 import DrugInteractions from '@/components/DrugInteractions';
 import Telemedicine from '@/components/Telemedicine';
 import GeneralDiagnosis from '@/components/Diagnosis';
-
+import LaboratoryAnalyzer from '@/components/LabAnalysis';
 // Types
 interface AnalysisResult {
   summary: string;
@@ -1575,6 +1575,7 @@ Based on the following patient data, generate the JSON response:`;
             
           </div>
                            <GeneralDiagnosis language={language} />
+                           <LaboratoryAnalyzer language={language} />
         </div>
       </main>
     </div>
