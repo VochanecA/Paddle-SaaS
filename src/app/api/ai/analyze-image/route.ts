@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     // Try multiple vision models
     const models = [
-      'google/gemini-flash-1.5-8b',
+      'nvidia/nemotron-nano-12b-v2-vl:free',
       'google/gemma-3-27b-it:free',
       'moonshotai/kimi-vl-a3b-thinking:free',
       'anthropic/claude-3-haiku',

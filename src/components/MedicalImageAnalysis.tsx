@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ImageIcon, Trash2, Loader2, ScanSearch, X } from 'lucide-react';
+import { ImageIcon, Trash2, Loader2, ScanSearch, X, FileText, AlertCircle, AlertTriangle, TrendingUp, Search } from 'lucide-react';
 
 // Types
 interface MedicalImage {
@@ -20,11 +20,59 @@ interface ImageAnalysisResult {
   abnormalities: string[];
 }
 
+// Type guard functions
+function isValidAnalysisResult(obj: unknown): obj is ImageAnalysisResult {
+  if (!obj || typeof obj !== 'object') return false;
+  
+  const analysis = obj as Partial<ImageAnalysisResult>;
+  return (
+    Array.isArray(analysis.findings) &&
+    analysis.findings.every((item: unknown) => typeof item === 'string') &&
+    typeof analysis.impression === 'string' &&
+    Array.isArray(analysis.recommendations) &&
+    analysis.recommendations.every((item: unknown) => typeof item === 'string') &&
+    typeof analysis.confidence === 'number' &&
+    Array.isArray(analysis.abnormalities) &&
+    analysis.abnormalities.every((item: unknown) => typeof item === 'string')
+  );
+}
+
+function isPartialAnalysis(obj: unknown): obj is Partial<ImageAnalysisResult> {
+  if (!obj || typeof obj !== 'object') return false;
+  return true;
+}
+
 interface MedicalImageAnalysisProps {
   language: 'montenegrin' | 'english';
 }
 
-const imageAnalysisTranslations = {
+type TranslationKeys = {
+  title: string;
+  uploadTitle: string;
+  uploadSubtitle: string;
+  uploadedImages: string;
+  analyze: string;
+  analyzing: string;
+  clearAll: string;
+  results: string;
+  findings: string;
+  impression: string;
+  recommendations: string;
+  confidence: string;
+  noAbnormalities: string;
+  abnormalities: string;
+  noFindings: string;
+  noRecommendations: string;
+  typeLabels: {
+    xray: string;
+    ct: string;
+    mri: string;
+    ultrasound: string;
+    other: string;
+  };
+};
+
+const imageAnalysisTranslations: Record<'montenegrin' | 'english', TranslationKeys> = {
   montenegrin: {
     title: 'Analiza Medicinskih Snimaka',
     uploadTitle: 'Kliknite ili prevucite RTG, CT, MR snimke',
@@ -37,9 +85,11 @@ const imageAnalysisTranslations = {
     findings: 'Nalazi',
     impression: 'Impresija',
     recommendations: 'Preporuke',
-    confidence: 'Pouzdanost analize:',
+    confidence: 'Pouzdanost analize',
     noAbnormalities: 'Nema uočenih abnormalnosti',
     abnormalities: 'Abnormalnosti',
+    noFindings: 'Nema dostupnih nalaza',
+    noRecommendations: 'Nema dostupnih preporuka',
     typeLabels: {
       xray: 'RTG',
       ct: 'CT',
@@ -60,9 +110,11 @@ const imageAnalysisTranslations = {
     findings: 'Findings',
     impression: 'Impression',
     recommendations: 'Recommendations',
-    confidence: 'Analysis confidence:',
+    confidence: 'Analysis confidence',
     noAbnormalities: 'No abnormalities detected',
     abnormalities: 'Abnormalities',
+    noFindings: 'No findings available',
+    noRecommendations: 'No recommendations available',
     typeLabels: {
       xray: 'X-Ray',
       ct: 'CT',
@@ -148,12 +200,27 @@ export default function MedicalImageAnalysis({ language }: MedicalImageAnalysisP
 
         if (!response.ok) throw new Error('Analysis failed');
 
-        const analysis: ImageAnalysisResult = await response.json();
+        const analysisData: unknown = await response.json();
         
-        // Update image with analysis
-        setImages(prev => prev.map(img => 
-          img.id === image.id ? { ...img, analysis } : img
-        ));
+        // Validate the analysis data
+        if (isValidAnalysisResult(analysisData)) {
+          setImages(prev => prev.map(img => 
+            img.id === image.id ? { ...img, analysis: analysisData } : img
+          ));
+        } else {
+          console.warn('Invalid analysis data received:', analysisData);
+          // Create a fallback analysis result
+          const fallbackAnalysis: ImageAnalysisResult = {
+            findings: [language === 'montenegrin' ? 'Analiza nije uspjela' : 'Analysis failed'],
+            impression: language === 'montenegrin' ? 'Greška u analizi' : 'Analysis error',
+            recommendations: [language === 'montenegrin' ? 'Pokušajte ponovo' : 'Please try again'],
+            confidence: 0,
+            abnormalities: []
+          };
+          setImages(prev => prev.map(img => 
+            img.id === image.id ? { ...img, analysis: fallbackAnalysis } : img
+          ));
+        }
 
         // Small delay between analyses
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -175,6 +242,33 @@ export default function MedicalImageAnalysis({ language }: MedicalImageAnalysisP
       URL.revokeObjectURL(image.previewUrl);
     });
     setImages([]);
+  };
+
+  // Helper function to safely get analysis arrays
+  const getSafeAnalysisArray = (
+    analysis: ImageAnalysisResult | undefined, 
+    key: keyof Pick<ImageAnalysisResult, 'findings' | 'recommendations' | 'abnormalities'>
+  ): string[] => {
+    if (!analysis || !analysis[key] || !Array.isArray(analysis[key])) {
+      return [];
+    }
+    return analysis[key].filter((item: unknown): item is string => typeof item === 'string');
+  };
+
+  // Helper function to get safe confidence value
+  const getSafeConfidence = (analysis: ImageAnalysisResult | undefined): number => {
+    if (!analysis || typeof analysis.confidence !== 'number') {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, analysis.confidence));
+  };
+
+  // Helper function to get safe impression
+  const getSafeImpression = (analysis: ImageAnalysisResult | undefined): string => {
+    if (!analysis || typeof analysis.impression !== 'string') {
+      return language === 'montenegrin' ? 'Nema dostupne impresije' : 'No impression available';
+    }
+    return analysis.impression;
   };
 
   return (
@@ -282,101 +376,136 @@ export default function MedicalImageAnalysis({ language }: MedicalImageAnalysisP
             {t.results}
           </h3>
           
-          {images.map((image) => image.analysis && (
-            <div key={image.id} className="border border-gray-200 dark:border-gray-700 rounded-2xl p-6 bg-white/50 dark:bg-gray-800/50">
-              <div className="flex flex-col lg:flex-row gap-6">
-                {/* Image Preview */}
-                <div className="flex-shrink-0">
-                  <div className="w-48 h-48 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
-                    <img 
-                      src={image.previewUrl} 
-                      alt={image.file.name}
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <div className="mt-3 text-center">
-                    <span className="bg-blue-600 text-white text-sm px-3 py-1 rounded-full">
-                      {t.typeLabels[image.type]}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Analysis Results */}
-                <div className="flex-1 space-y-4">
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
-                      <ScanSearch className="w-4 h-4 mr-2" />
-                      {t.findings}
-                    </h4>
-                    <ul className="space-y-2">
-                      {image.analysis.findings.map((finding, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                          <span className="text-gray-700 dark:text-gray-300 text-sm">{finding}</span>
-                        </li>
-                      ))}
-                    </ul>
+          {images.map((image) => {
+            if (!image.analysis) return null;
+
+            const safeFindings = getSafeAnalysisArray(image.analysis, 'findings');
+            const safeRecommendations = getSafeAnalysisArray(image.analysis, 'recommendations');
+            const safeAbnormalities = getSafeAnalysisArray(image.analysis, 'abnormalities');
+            const safeConfidence = getSafeConfidence(image.analysis);
+            const safeImpression = getSafeImpression(image.analysis);
+
+            return (
+              <div key={image.id} className="border border-gray-200 dark:border-gray-700 rounded-2xl p-6 bg-white/50 dark:bg-gray-800/50">
+                <div className="flex flex-col lg:flex-row gap-6">
+                  {/* Image Preview */}
+                  <div className="flex-shrink-0">
+                    <div className="w-48 h-48 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
+                      <img 
+                        src={image.previewUrl} 
+                        alt={image.file.name}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="mt-3 text-center">
+                      <span className="bg-blue-600 text-white text-sm px-3 py-1 rounded-full">
+                        {t.typeLabels[image.type]}
+                      </span>
+                    </div>
                   </div>
                   
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      {t.impression}
-                    </h4>
-                    <p className="text-gray-700 dark:text-gray-300 text-sm bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
-                      {image.analysis.impression}
-                    </p>
-                  </div>
-                  
-                  {image.analysis.abnormalities && image.analysis.abnormalities.length > 0 && (
-                    <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                        {t.abnormalities}
+                  {/* Analysis Results */}
+                  <div className="flex-1 space-y-6">
+                    {/* Findings */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <Search className="w-4 h-4 mr-2 text-blue-500" />
+                        {t.findings}
                       </h4>
-                      <ul className="space-y-1">
-                        {image.analysis.abnormalities.map((abnormality, index) => (
-                          <li key={index} className="flex items-start">
-                            <span className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                            <span className="text-red-700 dark:text-red-300 text-sm">{abnormality}</span>
+                      <ul className="space-y-2">
+                        {safeFindings.length > 0 ? (
+                          safeFindings.map((finding, index) => (
+                            <li key={index} className="flex items-start">
+                              <span className="w-2 h-2 bg-blue-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                              <span className="text-gray-700 dark:text-gray-300 text-sm">{finding}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-gray-500 dark:text-gray-400 text-sm">
+                            {t.noFindings}
                           </li>
-                        ))}
+                        )}
                       </ul>
                     </div>
-                  )}
-                  
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      {t.recommendations}
-                    </h4>
-                    <ul className="space-y-2">
-                      {image.analysis.recommendations.map((rec, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="w-2 h-2 bg-green-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                          <span className="text-gray-700 dark:text-gray-300 text-sm">{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {t.confidence}
-                    </span>
-                    <div className="flex items-center">
-                      <div className="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-2 mr-3">
-                        <div 
-                          className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${image.analysis.confidence * 100}%` }}
-                        ></div>
+
+                    {/* Impression */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <FileText className="w-4 h-4 mr-2 text-green-500" />
+                        {t.impression}
+                      </h4>
+                      <p className="text-gray-700 dark:text-gray-300 text-sm bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                        {safeImpression}
+                      </p>
+                    </div>
+
+                    {/* Abnormalities */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <AlertTriangle className="w-4 h-4 mr-2 text-red-500" />
+                        {t.abnormalities}
+                      </h4>
+                      <ul className="space-y-2">
+                        {safeAbnormalities.length > 0 ? (
+                          safeAbnormalities.map((abnormality, index) => (
+                            <li key={index} className="flex items-start">
+                              <span className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                              <span className="text-red-700 dark:text-red-300 text-sm">{abnormality}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-gray-500 dark:text-gray-400 text-sm">
+                            {t.noAbnormalities}
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Recommendations */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-2 text-orange-500" />
+                        {t.recommendations}
+                      </h4>
+                      <ul className="space-y-2">
+                        {safeRecommendations.length > 0 ? (
+                          safeRecommendations.map((recommendation, index) => (
+                            <li key={index} className="flex items-start">
+                              <span className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                              <span className="text-gray-700 dark:text-gray-300 text-sm">{recommendation}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-gray-500 dark:text-gray-400 text-sm">
+                            {t.noRecommendations}
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {/* Confidence Score */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h4 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <TrendingUp className="w-4 h-4 mr-2 text-purple-500" />
+                        {t.confidence}
+                      </h4>
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div 
+                            className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${safeConfidence * 100}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {(safeConfidence * 100).toFixed(1)}%
+                        </span>
                       </div>
-                      <span className="font-semibold text-green-600 text-sm">
-                        {Math.round(image.analysis.confidence * 100)}%
-                      </span>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
